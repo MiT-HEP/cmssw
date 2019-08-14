@@ -12,11 +12,16 @@
 <use   name="roothistmatrix"/>
 <use   name="RecoVertex/VertexTools"/>
 <use   name="RecoVertex/VertexPrimitives"/>
+<use   name="RecoVertex/KinematicFit"/>
+<use   name="RecoVertex/KinematicFitPrimitives"/>
 <use   name="DataFormats/L1TGlobal"/>
 <use   name="IOPool/Provenance"/>
 <use   name="DQMServices/Core"/>
 <use   name="CondFormats/BTauObjects"/>
 <use   name="CondTools/BTau"/>
+<use   name="MagneticField/Records"/>
+<use   name="TrackingTools/Records"/>
+<use   name="CommonTools/CandUtils"/>
 <library   file="*.cc" name="PhysicsToolsNanoAODPlugins">
   <flags   EDM_PLUGIN="1"/>
 </library>

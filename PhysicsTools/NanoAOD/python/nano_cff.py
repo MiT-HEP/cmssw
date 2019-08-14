@@ -15,6 +15,7 @@ from PhysicsTools.NanoAOD.vertices_cff import *
 from PhysicsTools.NanoAOD.met_cff import *
 from PhysicsTools.NanoAOD.triggerObjects_cff import *
 from PhysicsTools.NanoAOD.isotracks_cff import *
+from PhysicsTools.NanoAOD.BxToMuMu_cff import *
 from PhysicsTools.NanoAOD.NanoAODEDMEventContent_cff import *
 
 from Configuration.Eras.Modifier_run2_miniAOD_80XLegacy_cff import run2_miniAOD_80XLegacy
@@ -309,6 +310,15 @@ def nanoAOD_customizeMC(process):
     for modifier in run2_nanoAOD_94XMiniAODv1, run2_nanoAOD_94XMiniAODv2:
         modifier.toModify(process, lambda p: nanoAOD_runMETfixEE2017(p,isData=False))
     return process
+
+def nanoAOD_customizeBxToMuMu(process):
+    process = nanoAOD_customizeCommon(process)
+    # Data 
+    process.nanoSequence   = cms.Sequence( process.nanoSequence + BxToMuMuSequence + BxToMuMuTables)
+    # MC
+    process.nanoSequenceMC = cms.Sequence( process.nanoSequenceMC + BxToMuMuMcSequence + BxToMuMuMcTables)
+    return process
+
 
 ### Era dependent customization
 _80x_sequence = nanoSequenceCommon.copy()
