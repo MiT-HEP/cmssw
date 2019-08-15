@@ -212,6 +212,12 @@ private:
 				 const pat::Muon& muon1,
 				 const pat::Muon& muon2);
 
+  KinematicFitResult 
+  vertexWithKinematicFitter(edm::ESHandle<TransientTrackBuilder>& theTTBuilder,
+			    const pat::Muon& muon1,
+			    const pat::Muon& muon2,
+			    const pat::PackedCandidate& pfCand);
+
   /// BToKJPsiMuMuFitResult
   KinematicFitResult
   fitBToKJPsiMuMu( RefCountedKinematicParticle jpsi,
@@ -262,12 +268,14 @@ private:
   double maxBKmmMass_;
   double maxTwoTrackDOCA_;
     
-    float MuonMass_ = 0.10565837;
-    float MuonMassErr_ = 3.5*1e-9;
-    float KaonMass_ = 0.493677;
-    float KaonMassErr_ = 1.6e-5;
-    float JPsiMass_ = 3.0969;
-    float JPsiMassErr_ = 92.9e-6;
+  float MuonMass_    = 0.10565837;
+  float MuonMassErr_ = 3.5*1e-9;
+  float KaonMass_    = 0.493677;
+  float KaonMassErr_ = 1.6e-5;
+  float pionMass_    = 0.139570;
+  float pionMassErr_ = 3.5e-7;
+  float JPsiMass_    = 3.0969;
+  float JPsiMassErr_ = 92.9e-6;
 
 };
 
@@ -408,8 +416,8 @@ void BxToMuMuProducer::produce(edm::Event& iEvent, const edm::EventSetup& iSetup
 	    dimuonCand.addUserInt(  "gen_pdgId",      gen_mm.mm_pdgId);
 	    dimuonCand.addUserInt(  "gen_mpdgId",     gen_mm.mm_motherPdgId);
 	  }
-	  unsigned int nMu1CloseTracks(0), nMu2CloseTracks(0), nMu1VeryCloseTracks(0), 
-	    nMu2VeryCloseTracks(0);
+	  
+	  unsigned int nTracksCompatibleWithTheMuMuVertex(0);
 	  auto imm = dimuon->size();
 	  for (unsigned int k = 0; k < nPFCands; ++k) {
 	    const pat::PackedCandidate & pfCand = (*pfCandHandle)[k];
@@ -422,12 +430,9 @@ void BxToMuMuProducer::produce(edm::Event& iEvent, const edm::EventSetup& iSetup
 	    double mu2_kaon_doca = distanceOfClosestApproach(muon2.innerTrack().get(),
 							     pfCand.bestTrack(),
 							     theTTBuilder);
-	    if (mu1_kaon_doca<mu2_kaon_doca){
-	      if (mu1_kaon_doca<0.010) nMu1CloseTracks++;
-	      if (mu1_kaon_doca<0.005) nMu1VeryCloseTracks++;
-	    } else {
-	      if (mu2_kaon_doca<0.010) nMu2CloseTracks++;
-	      if (mu2_kaon_doca<0.005) nMu2VeryCloseTracks++;
+	    if (mu1_kaon_doca<maxTwoTrackDOCA_ and mu2_kaon_doca<maxTwoTrackDOCA_){
+	      auto fit_result = vertexWithKinematicFitter(theTTBuilder, muon1, muon2, pfCand);
+	      if ( fit_result.vtxProb()>0.1 ) nTracksCompatibleWithTheMuMuVertex++;
 	    }		
 
 	    // BtoJpsiK
@@ -486,10 +491,7 @@ void BxToMuMuProducer::produce(edm::Event& iEvent, const edm::EventSetup& iSetup
 
 	    btokmm->push_back(btokmmCand);
 	  }                    
-	  dimuonCand.addUserInt( "mu1_nCloseTrks",     nMu1CloseTracks);
-	  dimuonCand.addUserInt( "mu1_nVeryCloseTrks", nMu1VeryCloseTracks);
-	  dimuonCand.addUserInt( "mu2_nCloseTrks",     nMu2CloseTracks);
-	  dimuonCand.addUserInt( "mu2_nVeryCloseTrks", nMu2VeryCloseTracks);
+	  dimuonCand.addUserInt( "nTrks",     nTracksCompatibleWithTheMuMuVertex);
         
 	  dimuon->push_back(dimuonCand);
 	}
@@ -567,9 +569,9 @@ BxToMuMuProducer::vertexWithKinematicFitter(edm::ESHandle<TransientTrackBuilder>
   double chi = 0.;
   double ndf = 0.;
 
-  for (auto trk: trks){
-    transTrks.push_back((*theTTBuilder).build(trk));
-    particles.push_back(factory.particle(transTrks.back(),MuonMass_,chi,ndf,MuonMassErr_));
+  for (unsigned int i=0; i<trks.size(); ++i){
+    transTrks.push_back((*theTTBuilder).build(trks[i]));
+    particles.push_back(factory.particle(transTrks.back(),masses[i],chi,ndf,MuonMassErr_));
   }
 
   RefCountedKinematicTree vertexFitTree = fitter.fit(particles);
@@ -609,6 +611,23 @@ BxToMuMuProducer::vertexMuonsWithKinematicFitter(edm::ESHandle<TransientTrackBui
   masses.push_back(MuonMass_);
   trks.push_back( muon2.innerTrack().get() );
   masses.push_back(MuonMass_);
+  return vertexWithKinematicFitter(theTTBuilder,trks,masses);
+}
+
+KinematicFitResult
+BxToMuMuProducer::vertexWithKinematicFitter(edm::ESHandle<TransientTrackBuilder>& theTTBuilder,
+					    const pat::Muon& muon1,
+					    const pat::Muon& muon2,
+					    const pat::PackedCandidate& pion)
+{
+  std::vector<const reco::Track*> trks;
+  std::vector<float> masses;
+  trks.push_back( muon1.innerTrack().get() );
+  masses.push_back(MuonMass_);
+  trks.push_back( muon2.innerTrack().get() );
+  masses.push_back(MuonMass_);
+  trks.push_back( pion.bestTrack() );
+  masses.push_back(pionMass_);
   return vertexWithKinematicFitter(theTTBuilder,trks,masses);
 }
 
