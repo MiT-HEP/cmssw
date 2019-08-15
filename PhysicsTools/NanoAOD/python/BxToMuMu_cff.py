@@ -67,6 +67,10 @@ BxToMuMuDiMuonTableVariables = merge_psets(
         mu1_index    = Var("userInt('mu1_index')",         int,   doc = "Index of corresponding leading muon"),
         mu2_index    = Var("userInt('mu2_index')",         int,   doc = "Index of corresponding subleading muon"),
         mass         = Var("mass",                         float, doc = "Unfit invariant mass"),
+        mu1_nCloseTrks = Var("userInt('mu1_nCloseTrks')",  int,   doc = "Number of tracks with DOCA<0.01, which are closer to muon1"),
+        mu2_nCloseTrks = Var("userInt('mu2_nCloseTrks')",  int,   doc = "Number of tracks with DOCA<0.01, which are closer to muon2"),
+        mu1_nVeryCloseTrks = Var("userInt('mu1_nVeryCloseTrks')",  int,   doc = "Number of tracks with DOCA<0.005, which are closer to muon1"),
+        mu2_nVeryCloseTrks = Var("userInt('mu2_nVeryCloseTrks')",  int,   doc = "Number of tracks with DOCA<0.005, which are closer to muon2"),
         # Kalman Fit
         kal_valid    = Var("userInt('kalman_valid')",      int,   doc = "Kalman vertex fit validity"),
         kal_vtx_prob = Var("userFloat('kalman_vtx_prob')", float, doc = "Kalman fit vertex probability"),
@@ -121,7 +125,9 @@ BxToMuMuBToKmumuTableVariables =  merge_psets(
         kaon_charge = Var("userInt('kaon_charge')",           int,   doc = "kaon charge"),
         kaon_pt     = Var("userFloat('kaon_pt')",             float, doc = "kaon pt"),
         kaon_eta    = Var("userFloat('kaon_eta')",            float, doc = "kaon eta"),
-        kaon_phi    = Var("userFloat('kaon_phi')",            float, doc = "kaon phi")
+        kaon_phi    = Var("userFloat('kaon_phi')",            float, doc = "kaon phi"),
+        kaon_mu1_doca = Var("userFloat('kaon_mu1_doca')",     float, doc = "Distance of closest approach between kaon and muon1"),
+        kaon_mu2_doca = Var("userFloat('kaon_mu2_doca')",     float, doc = "Distance of closest approach between kaon and muon2"),
     )
 )
 

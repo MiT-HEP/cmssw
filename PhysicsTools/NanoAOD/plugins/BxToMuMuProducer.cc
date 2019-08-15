@@ -408,72 +408,88 @@ void BxToMuMuProducer::produce(edm::Event& iEvent, const edm::EventSetup& iSetup
 	    dimuonCand.addUserInt(  "gen_pdgId",      gen_mm.mm_pdgId);
 	    dimuonCand.addUserInt(  "gen_mpdgId",     gen_mm.mm_motherPdgId);
 	  }
-
+	  unsigned int nMu1CloseTracks(0), nMu2CloseTracks(0), nMu1VeryCloseTracks(0), 
+	    nMu2VeryCloseTracks(0);
 	  auto imm = dimuon->size();
-	  // BtoJpsiK
-	  if (fabs(kinematicMuMuVertexFit.mass()-3.1)<0.2){
-	    for (unsigned int k = 0; k < nPFCands; ++k) {
-	      const pat::PackedCandidate & pfCand = (*pfCandHandle)[k];
-	      if(abs(pfCand.pdgId())!=211) continue; //Charged hadrons
-	      if(!pfCand.hasTrackDetails()) continue;
-	      if(pfCand.pt()<ptMinKaon_ || abs(pfCand.eta())>etaMaxKaon_) continue;
-	      if(deltaR(muon1, pfCand) < 0.01 || deltaR(muon2, pfCand) < 0.01) continue;
+	  for (unsigned int k = 0; k < nPFCands; ++k) {
+	    const pat::PackedCandidate & pfCand = (*pfCandHandle)[k];
+	    if (deltaR(muon1, pfCand) < 0.01 || deltaR(muon2, pfCand) < 0.01) continue;
+	    if (pfCand.charge() == 0 ) continue;
+	    if (!pfCand.hasTrackDetails()) continue;
+	    double mu1_kaon_doca = distanceOfClosestApproach(muon1.innerTrack().get(),
+							     pfCand.bestTrack(),
+							     theTTBuilder);
+	    double mu2_kaon_doca = distanceOfClosestApproach(muon2.innerTrack().get(),
+							     pfCand.bestTrack(),
+							     theTTBuilder);
+	    if (mu1_kaon_doca<mu2_kaon_doca){
+	      if (mu1_kaon_doca<0.010) nMu1CloseTracks++;
+	      if (mu1_kaon_doca<0.005) nMu1VeryCloseTracks++;
+	    } else {
+	      if (mu2_kaon_doca<0.010) nMu2CloseTracks++;
+	      if (mu2_kaon_doca<0.005) nMu2VeryCloseTracks++;
+	    }		
+
+	    // BtoJpsiK
+	    if (fabs(kinematicMuMuVertexFit.mass()-3.1)>0.2) continue;
+	    if (abs(pfCand.pdgId())!=211) continue; //Charged hadrons
+	    if (pfCand.pt()<ptMinKaon_ || abs(pfCand.eta())>etaMaxKaon_) continue;
 	    
-	      if (maxTwoTrackDOCA_>0 and 
-		  distanceOfClosestApproach(muon1.innerTrack().get(),
-					    pfCand.bestTrack(),
-					    theTTBuilder) > maxTwoTrackDOCA_) continue;	      
-	      if (maxTwoTrackDOCA_>0 and 
-		  distanceOfClosestApproach(muon2.innerTrack().get(),
-					    pfCand.bestTrack(),
-					    theTTBuilder) > maxTwoTrackDOCA_) continue;
+	    if (maxTwoTrackDOCA_>0 and mu1_kaon_doca> maxTwoTrackDOCA_) continue;	      
+	    
+	    if (maxTwoTrackDOCA_>0 and mu2_kaon_doca> maxTwoTrackDOCA_) continue;	      
 
-	      double kmm_mass = (muon1.p4()+muon2.p4()+pfCand.p4()).mass();
-	      if ( kmm_mass<minBKmmMass_ || kmm_mass>maxBKmmMass_ ) continue;
+	    double kmm_mass = (muon1.p4()+muon2.p4()+pfCand.p4()).mass();
+	    if ( kmm_mass<minBKmmMass_ || kmm_mass>maxBKmmMass_ ) continue;
 
-	      pat::CompositeCandidate btokmmCand;
-	      btokmmCand.addUserInt("mm_index", imm);
-	      btokmmCand.addUserFloat("kaon_pt", pfCand.pt());
-	      btokmmCand.addUserFloat("kaon_eta", pfCand.eta());
-	      btokmmCand.addUserFloat("kaon_phi", pfCand.phi());
-	      btokmmCand.addUserInt("kaon_charge", pfCand.charge());
+	    pat::CompositeCandidate btokmmCand;
+	    btokmmCand.addUserInt("mm_index", imm);
+	    btokmmCand.addUserFloat("kaon_pt", pfCand.pt());
+	    btokmmCand.addUserFloat("kaon_eta", pfCand.eta());
+	    btokmmCand.addUserFloat("kaon_phi", pfCand.phi());
+	    btokmmCand.addUserInt("kaon_charge", pfCand.charge());
+	    btokmmCand.addUserFloat("kaon_mu1_doca", mu1_kaon_doca);
+	    btokmmCand.addUserFloat("kaon_mu2_doca", mu2_kaon_doca);
 
-	      if (isMC_){
-		auto gen_kmm = getGenMatchInfo(*prunedGenParticles.product(),muon1,muon2,&pfCand);
-		btokmmCand.addUserInt(  "gen_kaon_pdgId",  gen_kmm.kaon_pdgId);
-		btokmmCand.addUserInt(  "gen_kaon_mpdgId", gen_kmm.kaon_motherPdgId);
-		btokmmCand.addUserFloat("gen_kaon_pt",     gen_kmm.kaon_pt);
-		btokmmCand.addUserFloat("gen_mass",        gen_kmm.kmm_mass);
-		btokmmCand.addUserFloat("gen_pt",          gen_kmm.kmm_pt);
-		btokmmCand.addUserInt(  "gen_pdgId",       gen_kmm.kmm_pdgId);
-	      }
-	      // if (pfCand.genParticle()){
-	      // 	btokmmCand.addUserInt("kaon_mc_pdgId", pfCand.genParticle().pdgId());
-	      // } else {
-	      // 	btokmmCand.addUserInt("kaon_mc_pdgId", 0);
-	      // }
+	    if (isMC_){
+	      auto gen_kmm = getGenMatchInfo(*prunedGenParticles.product(),muon1,muon2,&pfCand);
+	      btokmmCand.addUserInt(  "gen_kaon_pdgId",  gen_kmm.kaon_pdgId);
+	      btokmmCand.addUserInt(  "gen_kaon_mpdgId", gen_kmm.kaon_motherPdgId);
+	      btokmmCand.addUserFloat("gen_kaon_pt",     gen_kmm.kaon_pt);
+	      btokmmCand.addUserFloat("gen_mass",        gen_kmm.kmm_mass);
+	      btokmmCand.addUserFloat("gen_pt",          gen_kmm.kmm_pt);
+	      btokmmCand.addUserInt(  "gen_pdgId",       gen_kmm.kmm_pdgId);
+	    }
+	    // if (pfCand.genParticle()){
+	    // 	btokmmCand.addUserInt("kaon_mc_pdgId", pfCand.genParticle().pdgId());
+	    // } else {
+	    // 	btokmmCand.addUserInt("kaon_mc_pdgId", 0);
+	    // }
+	    
+	    auto bToKJPsiMuMuNoMassConstraint = fitBToKJPsiMuMu(kinematicMuMuVertexFit.refitMother, pfCand, theTTBuilder, false);
+	    bToKJPsiMuMuNoMassConstraint.postprocess(beamSpot);
+	    addFitInfo(btokmmCand, bToKJPsiMuMuNoMassConstraint, "nomc");
 	      
-	      auto bToKJPsiMuMuNoMassConstraint = fitBToKJPsiMuMu(kinematicMuMuVertexFit.refitMother, pfCand, theTTBuilder, false);
-	      bToKJPsiMuMuNoMassConstraint.postprocess(beamSpot);
-	      addFitInfo(btokmmCand, bToKJPsiMuMuNoMassConstraint, "nomc");
+	    // worse performing option
+	    // auto bToKJPsiMuMuWithMassConstraint = fitBToKJPsiMuMu(kinematicMuMuVertexFit.refitMother, pfCand, theTTBuilder, true);
+	    // bToKJPsiMuMuWithMassConstraint.postprocess(beamSpot);
+	    // addFitInfo(btokmmCand, bToKJPsiMuMuWithMassConstraint, "jpsimc");
+	    
+	    auto bToKJPsiMuMu_MC = fitBToKJPsiMuMuNew(kinematicMuMuVertexFit.refitTree, pfCand, theTTBuilder, true);
+	    bToKJPsiMuMu_MC.postprocess(beamSpot);
+	    addFitInfo(btokmmCand, bToKJPsiMuMu_MC, "jpsimc");
 	      
-	      // worse performing option
-	      // auto bToKJPsiMuMuWithMassConstraint = fitBToKJPsiMuMu(kinematicMuMuVertexFit.refitMother, pfCand, theTTBuilder, true);
-	      // bToKJPsiMuMuWithMassConstraint.postprocess(beamSpot);
-	      // addFitInfo(btokmmCand, bToKJPsiMuMuWithMassConstraint, "jpsimc");
+	    // broken pointing constraint
+	    // auto bToKJPsiMuMu_MC_PC = refitWithPointingConstraint(bToKJPsiMuMu_MC.refitTree, primaryVertex);
+	    // bToKJPsiMuMu_MC_PC.postprocess(beamSpot);
+	    // addFitInfo(btokmmCand, bToKJPsiMuMu_MC_PC, "mcpc");
 
-	      auto bToKJPsiMuMu_MC = fitBToKJPsiMuMuNew(kinematicMuMuVertexFit.refitTree, pfCand, theTTBuilder, true);
-	      bToKJPsiMuMu_MC.postprocess(beamSpot);
-	      addFitInfo(btokmmCand, bToKJPsiMuMu_MC, "jpsimc");
-	      
-	      // broken pointing constraint
-	      // auto bToKJPsiMuMu_MC_PC = refitWithPointingConstraint(bToKJPsiMuMu_MC.refitTree, primaryVertex);
-	      // bToKJPsiMuMu_MC_PC.postprocess(beamSpot);
-	      // addFitInfo(btokmmCand, bToKJPsiMuMu_MC_PC, "mcpc");
-
-	      btokmm->push_back(btokmmCand);
-	    }                    
-	  }
+	    btokmm->push_back(btokmmCand);
+	  }                    
+	  dimuonCand.addUserInt( "mu1_nCloseTrks",     nMu1CloseTracks);
+	  dimuonCand.addUserInt( "mu1_nVeryCloseTrks", nMu1VeryCloseTracks);
+	  dimuonCand.addUserInt( "mu2_nCloseTrks",     nMu2CloseTracks);
+	  dimuonCand.addUserInt( "mu2_nVeryCloseTrks", nMu2VeryCloseTracks);
         
 	  dimuon->push_back(dimuonCand);
 	}
