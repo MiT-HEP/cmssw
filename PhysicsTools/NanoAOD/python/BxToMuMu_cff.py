@@ -67,7 +67,8 @@ BxToMuMuDiMuonTableVariables = merge_psets(
         mu1_index    = Var("userInt('mu1_index')",         int,   doc = "Index of corresponding leading muon"),
         mu2_index    = Var("userInt('mu2_index')",         int,   doc = "Index of corresponding subleading muon"),
         mass         = Var("mass",                         float, doc = "Unfit invariant mass"),
-        nTrks = Var("userInt('nTrks')",                    int,   doc = "Number of tracks compatible with the vertex"),
+        nTrks        = Var("userInt('nTrks')",             int,   doc = "Number of tracks compatible with the vertex"),
+        nDisTrks     = Var("userInt('nDisTrks')",          int,   doc = "Number of displaced tracks compatible with the vertex"),
         # Kalman Fit
         kal_valid    = Var("userInt('kalman_valid')",      int,   doc = "Kalman vertex fit validity"),
         kal_vtx_prob = Var("userFloat('kalman_vtx_prob')", float, doc = "Kalman fit vertex probability"),
@@ -119,12 +120,14 @@ BxToMuMuBToKmumuTableVariables =  merge_psets(
     copy_pset(kinematic_pset,{"kin_":"jpsimc_"}),
     cms.PSet(
         mm_index = Var("userInt('mm_index')",                 int,   doc = "Index of dimuon pair"),
-        kaon_charge = Var("userInt('kaon_charge')",           int,   doc = "kaon charge"),
-        kaon_pt     = Var("userFloat('kaon_pt')",             float, doc = "kaon pt"),
-        kaon_eta    = Var("userFloat('kaon_eta')",            float, doc = "kaon eta"),
-        kaon_phi    = Var("userFloat('kaon_phi')",            float, doc = "kaon phi"),
-        kaon_mu1_doca = Var("userFloat('kaon_mu1_doca')",     float, doc = "Distance of closest approach between kaon and muon1"),
-        kaon_mu2_doca = Var("userFloat('kaon_mu2_doca')",     float, doc = "Distance of closest approach between kaon and muon2"),
+        kaon_charge = Var("userInt('kaon_charge')",           int,   doc = "Kaon charge"),
+        kaon_pt     = Var("userFloat('kaon_pt')",             float, doc = "Kaon pt"),
+        kaon_eta    = Var("userFloat('kaon_eta')",            float, doc = "Kaon eta"),
+        kaon_phi    = Var("userFloat('kaon_phi')",            float, doc = "Kaon phi"),
+        kaon_dxy_bs = Var("userFloat('kaon_dxy_bs')",         float, doc = "Kaon impact parameter wrt the beam spot"),
+        kaon_sdxy_bs = Var("userFloat('kaon_sdxy_bs')",       float, doc = "Kaon impact parameter significance wrt the beam spot"),
+        kaon_mu1_doca = Var("userFloat('kaon_mu1_doca')",     float, doc = "Kaon distance of closest approach to muon1"),
+        kaon_mu2_doca = Var("userFloat('kaon_mu2_doca')",     float, doc = "Kaon distance of closest approach to muon2"),
     )
 )
 

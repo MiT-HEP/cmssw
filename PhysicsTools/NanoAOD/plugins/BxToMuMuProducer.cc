@@ -417,7 +417,7 @@ void BxToMuMuProducer::produce(edm::Event& iEvent, const edm::EventSetup& iSetup
 	    dimuonCand.addUserInt(  "gen_mpdgId",     gen_mm.mm_motherPdgId);
 	  }
 	  
-	  unsigned int nTracksCompatibleWithTheMuMuVertex(0);
+	  unsigned int nTracksCompatibleWithTheMuMuVertex(0), nDisplacedTracksCompatibleWithTheMuMuVertex(0);
 	  auto imm = dimuon->size();
 	  for (unsigned int k = 0; k < nPFCands; ++k) {
 	    const pat::PackedCandidate & pfCand = (*pfCandHandle)[k];
@@ -432,7 +432,11 @@ void BxToMuMuProducer::produce(edm::Event& iEvent, const edm::EventSetup& iSetup
 							     theTTBuilder);
 	    if (mu1_kaon_doca<maxTwoTrackDOCA_ and mu2_kaon_doca<maxTwoTrackDOCA_){
 	      auto fit_result = vertexWithKinematicFitter(theTTBuilder, muon1, muon2, pfCand);
-	      if ( fit_result.vtxProb()>0.1 ) nTracksCompatibleWithTheMuMuVertex++;
+	      if ( fit_result.vtxProb()>0.1 ) {
+		nTracksCompatibleWithTheMuMuVertex++;
+		double sigDxy = pfCand.bestTrack()->dxyError()>0 ? fabs(pfCand.bestTrack()->dxy(beamSpot))/pfCand.bestTrack()->dxyError():0.0;
+		if (sigDxy>2.0) nDisplacedTracksCompatibleWithTheMuMuVertex++;
+	      }
 	    }		
 
 	    // BtoJpsiK
@@ -452,6 +456,9 @@ void BxToMuMuProducer::produce(edm::Event& iEvent, const edm::EventSetup& iSetup
 	    btokmmCand.addUserFloat("kaon_pt", pfCand.pt());
 	    btokmmCand.addUserFloat("kaon_eta", pfCand.eta());
 	    btokmmCand.addUserFloat("kaon_phi", pfCand.phi());
+	    btokmmCand.addUserFloat("kaon_dxy_bs", pfCand.bestTrack()->dxy(beamSpot));
+	    btokmmCand.addUserFloat("kaon_sdxy_bs", 
+				    pfCand.bestTrack()->dxyError()>0 ? fabs(pfCand.bestTrack()->dxy(beamSpot))/pfCand.bestTrack()->dxyError():0.0);
 	    btokmmCand.addUserInt("kaon_charge", pfCand.charge());
 	    btokmmCand.addUserFloat("kaon_mu1_doca", mu1_kaon_doca);
 	    btokmmCand.addUserFloat("kaon_mu2_doca", mu2_kaon_doca);
@@ -492,6 +499,7 @@ void BxToMuMuProducer::produce(edm::Event& iEvent, const edm::EventSetup& iSetup
 	    btokmm->push_back(btokmmCand);
 	  }                    
 	  dimuonCand.addUserInt( "nTrks",     nTracksCompatibleWithTheMuMuVertex);
+	  dimuonCand.addUserInt( "nDisTrks",  nDisplacedTracksCompatibleWithTheMuMuVertex);
         
 	  dimuon->push_back(dimuonCand);
 	}
