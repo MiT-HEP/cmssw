@@ -256,8 +256,7 @@ private:
 				   const reco::Track* track2,
 				   edm::ESHandle<TransientTrackBuilder> theTTBuilder);
   
-  DisplacementInformationIn3D compute3dDisplacement(RefCountedKinematicParticle kinParticle,
-						    RefCountedKinematicVertex   kinVertex,
+  DisplacementInformationIn3D compute3dDisplacement(const KinematicFitResult& fit,
 						    const reco::VertexCollection& vertices);
 
   // ----------member data ---------------------------
@@ -346,7 +345,7 @@ void addFitInfo(pat::CompositeCandidate& cand, const KinematicFitResult& fit, st
 }
 
 void BxToMuMuProducer::produce(edm::Event& iEvent, const edm::EventSetup& iSetup) {
-    
+
     edm::ESHandle<MagneticField> bFieldHandle;
     edm::ESHandle<TransientTrackBuilder> theTTBuilder;
 
@@ -425,9 +424,7 @@ void BxToMuMuProducer::produce(edm::Event& iEvent, const edm::EventSetup& iSetup
 	  // Kinematic Fits
 	  auto kinematicMuMuVertexFit = vertexMuonsWithKinematicFitter(theTTBuilder, muon1, muon2);
 	  kinematicMuMuVertexFit.postprocess(beamSpot);
-	  auto displacement3D = compute3dDisplacement(kinematicMuMuVertexFit.refitMother,
-						      kinematicMuMuVertexFit.refitVertex,
-						      *pvHandle.product());
+	  auto displacement3D = compute3dDisplacement(kinematicMuMuVertexFit, *pvHandle.product());
 	  addFitInfo(dimuonCand, kinematicMuMuVertexFit, "kin", displacement3D);
 	  
 	  if (isMC_){
@@ -530,7 +527,8 @@ void BxToMuMuProducer::produce(edm::Event& iEvent, const edm::EventSetup& iSetup
 	    
 	    auto bToKJPsiMuMu_MC = fitBToKJPsiMuMuNew(kinematicMuMuVertexFit.refitTree, pfCand, theTTBuilder, true);
 	    bToKJPsiMuMu_MC.postprocess(beamSpot);
-	    addFitInfo(btokmmCand, bToKJPsiMuMu_MC, "jpsimc");
+	    auto bToKJPsiMuMu_MC_displacement = compute3dDisplacement(bToKJPsiMuMu_MC, *pvHandle.product());
+	    addFitInfo(btokmmCand, bToKJPsiMuMu_MC, "jpsimc", bToKJPsiMuMu_MC_displacement);
 	      
 	    // broken pointing constraint
 	    // auto bToKJPsiMuMu_MC_PC = refitWithPointingConstraint(bToKJPsiMuMu_MC.refitTree, primaryVertex);
@@ -937,10 +935,12 @@ float BxToMuMuProducer::distanceOfClosestApproach( const reco::Track* track1,
   return md.distance();
 }
 
-DisplacementInformationIn3D BxToMuMuProducer::compute3dDisplacement(RefCountedKinematicParticle kinParticle,
-								    RefCountedKinematicVertex   kinVertex,
+DisplacementInformationIn3D BxToMuMuProducer::compute3dDisplacement(const KinematicFitResult& fit,
 								    const reco::VertexCollection& vertices)
 {
+  DisplacementInformationIn3D result;
+  if (not fit.valid()) return result;
+
   // Potential issue: tracks used to build the candidate could 
   // also be used in the primary vertex fit. One can refit the vertices
   // excluding tracks from the cadndidate. It's not done at the moment 
@@ -948,8 +948,7 @@ DisplacementInformationIn3D BxToMuMuProducer::compute3dDisplacement(RefCountedKi
   // in MiniAOD. Also not all muons associated to a vertex are really 
   // used in the fit, so the potential bias most likely small.
   
-  auto kinTT = kinParticle->refittedTransientTrack();
-  DisplacementInformationIn3D result;
+  auto kinTT = fit.refitMother->refittedTransientTrack();
 
   const reco::Vertex* bestVertex(0);
   double minDistance(999.);
