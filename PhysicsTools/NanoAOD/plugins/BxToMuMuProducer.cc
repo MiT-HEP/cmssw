@@ -28,6 +28,7 @@
 #include "RecoVertex/KinematicFit/interface/KinematicConstrainedVertexFitter.h"
 #include "RecoVertex/KalmanVertexFit/interface/KalmanVertexFitter.h"
 #include "TrackingTools/PatternTools/interface/TwoTrackMinimumDistance.h"
+#include "TrackingTools/IPTools/interface/IPTools.h"
 
 #include "CommonTools/CandUtils/interface/AddFourMomenta.h"
 
@@ -158,6 +159,13 @@ struct KalmanVertexFitResult{
   }
 };
 
+struct DisplacementInformationIn3D{
+  float decayLength, decayLengthErr, doca, docaErr;
+  const reco::Vertex* pv;
+  DisplacementInformationIn3D():decayLength(-1.0),decayLengthErr(0.),
+				doca(-1.0),docaErr(0),pv(0){};
+};
+
 LorentzVector makeLorentzVectorFromPxPyPzM(double px, double py, double pz, double m){
   double p2 = px*px+py*py+pz*pz;
   return LorentzVector(px,py,pz,sqrt(p2+m*m));
@@ -167,6 +175,7 @@ struct GenMatchInfo{
   int mu1_pdgId, mu1_motherPdgId, mu2_pdgId, mu2_motherPdgId, kaon_pdgId, kaon_motherPdgId,
     mm_pdgId, mm_motherPdgId, kmm_pdgId;
   float mu1_pt, mu2_pt, kaon_pt, mm_mass, mm_pt, kmm_mass, kmm_pt;
+  math::XYZPoint mm_prod_vtx, mm_vtx, kmm_prod_vtx;
   GenMatchInfo():mu1_pdgId(0), mu1_motherPdgId(0), mu2_pdgId(0), mu2_motherPdgId(0), 
 		 kaon_pdgId(0), kaon_motherPdgId(0), mm_pdgId(0), mm_motherPdgId(0), 
 		 kmm_pdgId(0), mu1_pt(0), mu2_pt(0), kaon_pt(0), mm_mass(0), mm_pt(0), 
@@ -246,6 +255,10 @@ private:
   float distanceOfClosestApproach( const reco::Track* track1,
 				   const reco::Track* track2,
 				   edm::ESHandle<TransientTrackBuilder> theTTBuilder);
+  
+  DisplacementInformationIn3D compute3dDisplacement(RefCountedKinematicParticle kinParticle,
+						    RefCountedKinematicVertex   kinVertex,
+						    const reco::VertexCollection& vertices);
 
   // ----------member data ---------------------------
     
@@ -308,7 +321,8 @@ bool BxToMuMuProducer::isGoodMuon(const pat::Muon& muon){
   return true;
 }
 
-void addFitInfo(pat::CompositeCandidate& cand, const KinematicFitResult& fit, std::string name){
+void addFitInfo(pat::CompositeCandidate& cand, const KinematicFitResult& fit, std::string name, 
+		const DisplacementInformationIn3D& ipInfo = DisplacementInformationIn3D() ){
   cand.addUserInt(   name+"_valid",       fit.valid() );
   cand.addUserFloat( name+"_vtx_prob",    fit.vtxProb() );
   cand.addUserFloat( name+"_mass",        fit.mass() );
@@ -316,8 +330,20 @@ void addFitInfo(pat::CompositeCandidate& cand, const KinematicFitResult& fit, st
   cand.addUserFloat( name+"_lxy",         fit.lxy );
   cand.addUserFloat( name+"_sigLxy",      fit.sigLxy );
   cand.addUserFloat( name+"_cosAlpha",    fit.cosAlpha );
-}
+  cand.addUserFloat( name+"_vtx_x",       fit.valid()?fit.refitVertex->position().x():0 );
+  cand.addUserFloat( name+"_vtx_xErr",    fit.valid()?sqrt(fit.refitVertex->error().cxx()):0 );
+  cand.addUserFloat( name+"_vtx_y",       fit.valid()?fit.refitVertex->position().y():0 );
+  cand.addUserFloat( name+"_vtx_yErr",    fit.valid()?sqrt(fit.refitVertex->error().cyy()):0 );
+  cand.addUserFloat( name+"_vtx_z",       fit.valid()?fit.refitVertex->position().z():0 );
+  cand.addUserFloat( name+"_vtx_zErr",    fit.valid()?sqrt(fit.refitVertex->error().czz()):0 );
+  
+  // IP info
+  cand.addUserFloat( name+"_l3d",         ipInfo.decayLength);
+  cand.addUserFloat( name+"_sl3d",        ipInfo.decayLengthErr>0?ipInfo.decayLength/ipInfo.decayLengthErr:0);
+  cand.addUserFloat( name+"_pv_z",        ipInfo.pv?ipInfo.pv->position().z():0);
+  cand.addUserFloat( name+"_pv_zErr",     ipInfo.pv?ipInfo.pv->zError():0);
 
+}
 
 void BxToMuMuProducer::produce(edm::Event& iEvent, const edm::EventSetup& iSetup) {
     
@@ -328,7 +354,6 @@ void BxToMuMuProducer::produce(edm::Event& iEvent, const edm::EventSetup& iSetup
     iSetup.get<TransientTrackRecord>().get("TransientTrackBuilder",theTTBuilder);
 
     edm::Handle<reco::BeamSpot> beamSpotHandle;
-    edm::Handle<reco::VertexCollection> vertexHandle;
     
     iEvent.getByToken(beamSpotToken_, beamSpotHandle);
     
@@ -338,7 +363,8 @@ void BxToMuMuProducer::produce(edm::Event& iEvent, const edm::EventSetup& iSetup
     
     const reco::BeamSpot& beamSpot(*beamSpotHandle);
     
-    // iEvent.getByToken(vertexToken_, vertexHandle);
+    edm::Handle<reco::VertexCollection> pvHandle;
+    iEvent.getByToken(vertexToken_, pvHandle);
     // const reco::Vertex & primaryVertex = vertexHandle->front();
 
     edm::Handle<std::vector<pat::Muon>> muonHandle;
@@ -399,22 +425,34 @@ void BxToMuMuProducer::produce(edm::Event& iEvent, const edm::EventSetup& iSetup
 	  // Kinematic Fits
 	  auto kinematicMuMuVertexFit = vertexMuonsWithKinematicFitter(theTTBuilder, muon1, muon2);
 	  kinematicMuMuVertexFit.postprocess(beamSpot);
-	  addFitInfo(dimuonCand, kinematicMuMuVertexFit, "kin");
+	  auto displacement3D = compute3dDisplacement(kinematicMuMuVertexFit.refitMother,
+						      kinematicMuMuVertexFit.refitVertex,
+						      *pvHandle.product());
+	  addFitInfo(dimuonCand, kinematicMuMuVertexFit, "kin", displacement3D);
+	  
 	  if (isMC_){
 	    auto gen_mm = getGenMatchInfo(*prunedGenParticles.product(),muon1,muon2);
 	    // int mu1_pdgId, mu1_motherPdgId, mu2_pdgId, mu2_motherPdgId, kaon_pdgId, kaon_motherPdgId,
 	    // mm_pdgId, mm_motherPdgId, kmm_pdgId;
 	    // float mu1_pt, mu2_pt, kaon_pt, mm_mass, mm_pt, kmm_mass, kmm_pt;
-	    dimuonCand.addUserInt(  "gen_mu1_pdgId",  gen_mm.mu1_pdgId);
-	    dimuonCand.addUserInt(  "gen_mu1_mpdgId", gen_mm.mu1_motherPdgId);
-	    dimuonCand.addUserFloat("gen_mu1_pt",     gen_mm.mu1_pt);
-	    dimuonCand.addUserInt(  "gen_mu2_pdgId",  gen_mm.mu2_pdgId);
-	    dimuonCand.addUserInt(  "gen_mu2_mpdgId", gen_mm.mu2_motherPdgId);
-	    dimuonCand.addUserFloat("gen_mu2_pt",     gen_mm.mu2_pt);
-	    dimuonCand.addUserFloat("gen_mass",       gen_mm.mm_mass);
-	    dimuonCand.addUserFloat("gen_pt",         gen_mm.mm_pt);
-	    dimuonCand.addUserInt(  "gen_pdgId",      gen_mm.mm_pdgId);
-	    dimuonCand.addUserInt(  "gen_mpdgId",     gen_mm.mm_motherPdgId);
+	    dimuonCand.addUserInt(  "gen_mu1_pdgId",   gen_mm.mu1_pdgId);
+	    dimuonCand.addUserInt(  "gen_mu1_mpdgId",  gen_mm.mu1_motherPdgId);
+	    dimuonCand.addUserFloat("gen_mu1_pt",      gen_mm.mu1_pt);
+	    dimuonCand.addUserInt(  "gen_mu2_pdgId",   gen_mm.mu2_pdgId);
+	    dimuonCand.addUserInt(  "gen_mu2_mpdgId",  gen_mm.mu2_motherPdgId);
+	    dimuonCand.addUserFloat("gen_mu2_pt",      gen_mm.mu2_pt);
+	    dimuonCand.addUserFloat("gen_mass",        gen_mm.mm_mass);
+	    dimuonCand.addUserFloat("gen_pt",          gen_mm.mm_pt);
+	    dimuonCand.addUserInt(  "gen_pdgId",       gen_mm.mm_pdgId);
+	    dimuonCand.addUserInt(  "gen_mpdgId",      gen_mm.mm_motherPdgId);
+	    dimuonCand.addUserFloat("gen_prod_x",      gen_mm.mm_prod_vtx.x());
+	    dimuonCand.addUserFloat("gen_prod_y",      gen_mm.mm_prod_vtx.y());
+	    dimuonCand.addUserFloat("gen_prod_z",      gen_mm.mm_prod_vtx.z());
+	    dimuonCand.addUserFloat("gen_vtx_x",       gen_mm.mm_vtx.x());
+	    dimuonCand.addUserFloat("gen_vtx_y",       gen_mm.mm_vtx.y());
+	    dimuonCand.addUserFloat("gen_vtx_z",       gen_mm.mm_vtx.z());
+	    dimuonCand.addUserFloat("gen_l3d",         (gen_mm.mm_prod_vtx-gen_mm.mm_vtx).r());
+	    dimuonCand.addUserFloat("gen_lxy",         (gen_mm.mm_prod_vtx-gen_mm.mm_vtx).rho());
 	  }
 	  
 	  unsigned int nTracksCompatibleWithTheMuMuVertex(0), nDisplacedTracksCompatibleWithTheMuMuVertex(0);
@@ -471,6 +509,9 @@ void BxToMuMuProducer::produce(edm::Event& iEvent, const edm::EventSetup& iSetup
 	      btokmmCand.addUserFloat("gen_mass",        gen_kmm.kmm_mass);
 	      btokmmCand.addUserFloat("gen_pt",          gen_kmm.kmm_pt);
 	      btokmmCand.addUserInt(  "gen_pdgId",       gen_kmm.kmm_pdgId);
+	      btokmmCand.addUserFloat("gen_prod_vtx_x",  gen_kmm.kmm_prod_vtx.x());
+	      btokmmCand.addUserFloat("gen_prod_vtx_y",  gen_kmm.kmm_prod_vtx.y());
+	      btokmmCand.addUserFloat("gen_prod_vtx_z",  gen_kmm.kmm_prod_vtx.z());
 	    }
 	    // if (pfCand.genParticle()){
 	    // 	btokmmCand.addUserInt("kaon_mc_pdgId", pfCand.genParticle().pdgId());
@@ -845,13 +886,19 @@ GenMatchInfo BxToMuMuProducer::getGenMatchInfo( const edm::View<reco::GenParticl
     }
   }
   if ( mc_mu1 and mc_mu2 ){
+    if ( (mc_mu1->vertex()-mc_mu2->vertex()).r() < 1e-4)
+      result.mm_vtx    = mc_mu1->vertex();
     mm = mc_mu1->mother();
     if ( mm and mm == mc_mu2->mother() ){
-      result.mm_mass  = mm->mass();
-      result.mm_pt    = mm->pt();
-      result.mm_pdgId = mm->pdgId();
-      if (mm->mother())
-	result.mm_motherPdgId = mm->mother()->pdgId();
+      result.mm_mass      = mm->mass();
+      result.mm_pt        = mm->pt();
+      result.mm_pdgId     = mm->pdgId();
+      if (mm->mother()) result.mm_motherPdgId = mm->mother()->pdgId();
+      // handle oscillation and radiation
+      const reco::Candidate* primary = mm;
+      while (primary->mother() and abs(primary->pdgId())==abs(primary->mother()->pdgId()))
+	primary = primary->mother();
+      result.mm_prod_vtx  = primary->vertex();
     }
   }
   if (kaon){
@@ -868,9 +915,10 @@ GenMatchInfo BxToMuMuProducer::getGenMatchInfo( const edm::View<reco::GenParticl
     }
     if (mm and mc_kaon and mc_kaon->mother()){
       if (mm == mc_kaon->mother() or mm->mother() == mc_kaon->mother()){
-	result.kmm_pdgId = mc_kaon->mother()->pdgId();
-	result.kmm_mass  = mc_kaon->mother()->mass();
-	result.kmm_pt = mc_kaon->mother()->pt();
+	result.kmm_pdgId    = mc_kaon->mother()->pdgId();
+	result.kmm_mass     = mc_kaon->mother()->mass();
+	result.kmm_pt       = mc_kaon->mother()->pt();
+	result.kmm_prod_vtx = mc_kaon->mother()->vertex();
       }
     }
   }
@@ -888,6 +936,46 @@ float BxToMuMuProducer::distanceOfClosestApproach( const reco::Track* track1,
   if ( not md.calculate( tt1.initialFreeState(), tt2.initialFreeState() ) ) return -1.0;
   return md.distance();
 }
+
+DisplacementInformationIn3D BxToMuMuProducer::compute3dDisplacement(RefCountedKinematicParticle kinParticle,
+								    RefCountedKinematicVertex   kinVertex,
+								    const reco::VertexCollection& vertices)
+{
+  // Potential issue: tracks used to build the candidate could 
+  // also be used in the primary vertex fit. One can refit the vertices
+  // excluding tracks from the cadndidate. It's not done at the moment 
+  // due to non-trivial linkig between primary vertex and its tracks 
+  // in MiniAOD. Also not all muons associated to a vertex are really 
+  // used in the fit, so the potential bias most likely small.
+  
+  auto kinTT = kinParticle->refittedTransientTrack();
+  DisplacementInformationIn3D result;
+
+  const reco::Vertex* bestVertex(0);
+  double minDistance(999.);
+  for ( const auto & vertex: vertices ){
+      auto impactParameter3d = IPTools::absoluteImpactParameter3D(kinTT, vertex);
+      if (impactParameter3d.first and impactParameter3d.second.value()<minDistance){
+	minDistance = impactParameter3d.second.value();
+	bestVertex = &vertex;
+      }
+  }
+  if (! bestVertex) return result;
+
+  auto decayLength       = IPTools::signedDecayLength3D(kinTT, GlobalVector(0,0,1), *bestVertex);
+  auto impactParameter3d = IPTools::absoluteImpactParameter3D(kinTT, *bestVertex);
+  result.pv = bestVertex;
+  if (decayLength.first) {
+    result.decayLength    = fabs(decayLength.second.value());
+    result.decayLengthErr = fabs(decayLength.second.error());
+  }
+  if (impactParameter3d.first) {
+    result.doca    = impactParameter3d.second.value();
+    result.docaErr = impactParameter3d.second.error();
+  }
+  return result;
+}
+
 
 // GenInfoSummary HeavyFlavDileptonNtupleMakerMiniAOD::getGenInfoSummary(const edm::Event& iEvent){
 //   GenInfoSummary summary;
@@ -936,3 +1024,5 @@ float BxToMuMuProducer::distanceOfClosestApproach( const reco::Track* track1,
 
 
 DEFINE_FWK_MODULE(BxToMuMuProducer);
+
+//  LocalWords:  vertices
