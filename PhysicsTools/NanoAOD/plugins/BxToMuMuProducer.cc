@@ -48,12 +48,18 @@
 // TODO
 // - add pointing constraint
 // - alpha3D
-// - 3D impact parameter and its significance
-// - 3D flight length and its significance
-// - isolation
-// - close tracks
-// - refitted primary vertex excluding B cand tracks
+// - m1 and m2 isolation
 // - Chi2/ndof
+// - bkmm/mm pt
+// - bkmm/mm eta
+// - doca mm
+// - decay time
+// - decay length significance (doesn't look right)
+// - delta3D ?
+// - delta3D sig ?
+// - N close tracks doesn't look right
+// - othervtx
+// - Delta_Chi2 ?
 
 typedef reco::Candidate::LorentzVector LorentzVector;
 
@@ -160,10 +166,14 @@ struct KalmanVertexFitResult{
 };
 
 struct DisplacementInformationIn3D{
-  float decayLength, decayLengthErr, doca, docaErr;
+  float decayLength, decayLengthErr, 
+    distaceOfClosestApproach, distaceOfClosestApproachErr, 
+    longitudinalImpactParameter, longitudinalImpactParameterErr;
   const reco::Vertex* pv;
   DisplacementInformationIn3D():decayLength(-1.0),decayLengthErr(0.),
-				doca(-1.0),docaErr(0),pv(0){};
+				distaceOfClosestApproach(-1.0),distaceOfClosestApproachErr(0.0),
+				longitudinalImpactParameter(0.0), longitudinalImpactParameterErr(0.),
+				pv(0){};
 };
 
 LorentzVector makeLorentzVectorFromPxPyPzM(double px, double py, double pz, double m){
@@ -506,9 +516,11 @@ void BxToMuMuProducer::produce(edm::Event& iEvent, const edm::EventSetup& iSetup
 	      btokmmCand.addUserFloat("gen_mass",        gen_kmm.kmm_mass);
 	      btokmmCand.addUserFloat("gen_pt",          gen_kmm.kmm_pt);
 	      btokmmCand.addUserInt(  "gen_pdgId",       gen_kmm.kmm_pdgId);
-	      btokmmCand.addUserFloat("gen_prod_vtx_x",  gen_kmm.kmm_prod_vtx.x());
-	      btokmmCand.addUserFloat("gen_prod_vtx_y",  gen_kmm.kmm_prod_vtx.y());
-	      btokmmCand.addUserFloat("gen_prod_vtx_z",  gen_kmm.kmm_prod_vtx.z());
+	      btokmmCand.addUserFloat("gen_prod_x",  gen_kmm.kmm_prod_vtx.x());
+	      btokmmCand.addUserFloat("gen_prod_y",  gen_kmm.kmm_prod_vtx.y());
+	      btokmmCand.addUserFloat("gen_prod_z",  gen_kmm.kmm_prod_vtx.z());
+	      btokmmCand.addUserFloat("gen_l3d",         (gen_kmm.mm_prod_vtx-gen_kmm.mm_vtx).r());
+	      btokmmCand.addUserFloat("gen_lxy",         (gen_kmm.mm_prod_vtx-gen_kmm.mm_vtx).rho());
 	    }
 	    // if (pfCand.genParticle()){
 	    // 	btokmmCand.addUserInt("kaon_mc_pdgId", pfCand.genParticle().pdgId());
@@ -952,6 +964,7 @@ DisplacementInformationIn3D BxToMuMuProducer::compute3dDisplacement(const Kinema
 
   const reco::Vertex* bestVertex(0);
   double minDistance(999.);
+  // WARNING: best PV is selected based on minimal DOCA. Need to test other options.
   for ( const auto & vertex: vertices ){
       auto impactParameter3d = IPTools::absoluteImpactParameter3D(kinTT, vertex);
       if (impactParameter3d.first and impactParameter3d.second.value()<minDistance){
@@ -961,17 +974,21 @@ DisplacementInformationIn3D BxToMuMuProducer::compute3dDisplacement(const Kinema
   }
   if (! bestVertex) return result;
 
-  auto decayLength       = IPTools::signedDecayLength3D(kinTT, GlobalVector(0,0,1), *bestVertex);
+  auto impactParamaterZ  = IPTools::signedDecayLength3D(kinTT, GlobalVector(0,0,1), *bestVertex);
   auto impactParameter3d = IPTools::absoluteImpactParameter3D(kinTT, *bestVertex);
   result.pv = bestVertex;
-  if (decayLength.first) {
-    result.decayLength    = fabs(decayLength.second.value());
-    result.decayLengthErr = fabs(decayLength.second.error());
+  if (impactParamaterZ.first) {
+    result.longitudinalImpactParameter    = fabs(impactParamaterZ.second.value());
+    result.longitudinalImpactParameterErr = fabs(impactParamaterZ.second.error());
   }
   if (impactParameter3d.first) {
-    result.doca    = impactParameter3d.second.value();
-    result.docaErr = impactParameter3d.second.error();
+    result.distaceOfClosestApproach    = impactParameter3d.second.value();
+    result.distaceOfClosestApproachErr = impactParameter3d.second.error();
   }
+
+  // FIXME: add decay length calculation (VertexDistance3D)
+  // 
+
   return result;
 }
 
