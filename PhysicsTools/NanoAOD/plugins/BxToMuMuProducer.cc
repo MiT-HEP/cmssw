@@ -267,7 +267,8 @@ private:
 				   edm::ESHandle<TransientTrackBuilder> theTTBuilder);
   
   DisplacementInformationIn3D compute3dDisplacement(const KinematicFitResult& fit,
-						    const reco::VertexCollection& vertices);
+						    const reco::VertexCollection& vertices,
+						    bool closestIn3D = true);
 
   // ----------member data ---------------------------
     
@@ -434,6 +435,10 @@ void BxToMuMuProducer::produce(edm::Event& iEvent, const edm::EventSetup& iSetup
 	  // Kinematic Fits
 	  auto kinematicMuMuVertexFit = vertexMuonsWithKinematicFitter(theTTBuilder, muon1, muon2);
 	  kinematicMuMuVertexFit.postprocess(beamSpot);
+	  // printf("kinematicMuMuVertexFit (x,y,z): (%7.3f,%7.3f,%7.3f)\n", 
+	  // 	 kinematicMuMuVertexFit.refitVertex->position().x(),
+	  // 	 kinematicMuMuVertexFit.refitVertex->position().y(),
+	  // 	 kinematicMuMuVertexFit.refitVertex->position().z());
 	  auto displacement3D = compute3dDisplacement(kinematicMuMuVertexFit, *pvHandle.product());
 	  addFitInfo(dimuonCand, kinematicMuMuVertexFit, "kin", displacement3D);
 	  
@@ -516,11 +521,11 @@ void BxToMuMuProducer::produce(edm::Event& iEvent, const edm::EventSetup& iSetup
 	      btokmmCand.addUserFloat("gen_mass",        gen_kmm.kmm_mass);
 	      btokmmCand.addUserFloat("gen_pt",          gen_kmm.kmm_pt);
 	      btokmmCand.addUserInt(  "gen_pdgId",       gen_kmm.kmm_pdgId);
-	      btokmmCand.addUserFloat("gen_prod_x",  gen_kmm.kmm_prod_vtx.x());
-	      btokmmCand.addUserFloat("gen_prod_y",  gen_kmm.kmm_prod_vtx.y());
-	      btokmmCand.addUserFloat("gen_prod_z",  gen_kmm.kmm_prod_vtx.z());
-	      btokmmCand.addUserFloat("gen_l3d",         (gen_kmm.mm_prod_vtx-gen_kmm.mm_vtx).r());
-	      btokmmCand.addUserFloat("gen_lxy",         (gen_kmm.mm_prod_vtx-gen_kmm.mm_vtx).rho());
+	      btokmmCand.addUserFloat("gen_prod_x",      gen_kmm.kmm_prod_vtx.x());
+	      btokmmCand.addUserFloat("gen_prod_y",      gen_kmm.kmm_prod_vtx.y());
+	      btokmmCand.addUserFloat("gen_prod_z",      gen_kmm.kmm_prod_vtx.z());
+	      btokmmCand.addUserFloat("gen_l3d",         (gen_kmm.kmm_prod_vtx-gen_kmm.mm_vtx).r());
+	      btokmmCand.addUserFloat("gen_lxy",         (gen_kmm.kmm_prod_vtx-gen_kmm.mm_vtx).rho());
 	    }
 	    // if (pfCand.genParticle()){
 	    // 	btokmmCand.addUserInt("kaon_mc_pdgId", pfCand.genParticle().pdgId());
@@ -886,6 +891,7 @@ GenMatchInfo BxToMuMuProducer::getGenMatchInfo( const edm::View<reco::GenParticl
     if (muon1.genParticle()->mother()){
       result.mu1_motherPdgId = muon1.genParticle()->mother()->pdgId();
     }
+    // printf("mc_mu1 pt: %7.4f \tvertex(rho,z): (%7.4f,%7.4f)\n", mc_mu1->pt(), mc_mu1->vertex().rho(), mc_mu1->vertex().z());
   }
   if (muon2.genParticle()){
     mc_mu2 = muon2.genParticle();
@@ -894,6 +900,7 @@ GenMatchInfo BxToMuMuProducer::getGenMatchInfo( const edm::View<reco::GenParticl
     if (muon2.genParticle()->mother()){
       result.mu2_motherPdgId = muon2.genParticle()->mother()->pdgId();
     }
+    // printf("mc_mu2 pt: %7.4f \tvertex(rho,z): (%7.4f,%7.4f)\n", mc_mu2->pt(), mc_mu2->vertex().rho(), mc_mu2->vertex().z());
   }
   if ( mc_mu1 and mc_mu2 ){
     if ( (mc_mu1->vertex()-mc_mu2->vertex()).r() < 1e-4)
@@ -948,7 +955,8 @@ float BxToMuMuProducer::distanceOfClosestApproach( const reco::Track* track1,
 }
 
 DisplacementInformationIn3D BxToMuMuProducer::compute3dDisplacement(const KinematicFitResult& fit,
-								    const reco::VertexCollection& vertices)
+								    const reco::VertexCollection& vertices,
+								    bool closestIn3D)
 {
   DisplacementInformationIn3D result;
   if (not fit.valid()) return result;
@@ -960,34 +968,64 @@ DisplacementInformationIn3D BxToMuMuProducer::compute3dDisplacement(const Kinema
   // in MiniAOD. Also not all muons associated to a vertex are really 
   // used in the fit, so the potential bias most likely small.
   
-  auto kinTT = fit.refitMother->refittedTransientTrack();
+  auto candTransientTrack = fit.refitMother->refittedTransientTrack();
 
   const reco::Vertex* bestVertex(0);
   double minDistance(999.);
-  // WARNING: best PV is selected based on minimal DOCA. Need to test other options.
+
   for ( const auto & vertex: vertices ){
-      auto impactParameter3d = IPTools::absoluteImpactParameter3D(kinTT, vertex);
-      if (impactParameter3d.first and impactParameter3d.second.value()<minDistance){
-	minDistance = impactParameter3d.second.value();
+    if (closestIn3D){
+      auto impactParameter3D = IPTools::absoluteImpactParameter3D(candTransientTrack, vertex);
+      if (impactParameter3D.first and impactParameter3D.second.value() < minDistance){
+	minDistance = impactParameter3D.second.value();
 	bestVertex = &vertex;
       }
+    } else{
+      auto impactParameterZ  = IPTools::signedDecayLength3D(candTransientTrack, GlobalVector(0,0,1), vertex);
+      if (impactParameterZ.first and impactParameterZ.second.value() < minDistance){
+	minDistance = impactParameterZ.second.value();
+	bestVertex = &vertex;
+      }
+    }
   }
+
   if (! bestVertex) return result;
 
-  auto impactParamaterZ  = IPTools::signedDecayLength3D(kinTT, GlobalVector(0,0,1), *bestVertex);
-  auto impactParameter3d = IPTools::absoluteImpactParameter3D(kinTT, *bestVertex);
+  auto impactParameter3D = IPTools::absoluteImpactParameter3D(candTransientTrack, *bestVertex);
+  auto impactParameterZ  = IPTools::signedDecayLength3D(candTransientTrack, GlobalVector(0,0,1), *bestVertex);
   result.pv = bestVertex;
-  if (impactParamaterZ.first) {
-    result.longitudinalImpactParameter    = fabs(impactParamaterZ.second.value());
-    result.longitudinalImpactParameterErr = fabs(impactParamaterZ.second.error());
+  if (impactParameterZ.first) {
+    result.longitudinalImpactParameter    = impactParameterZ.second.value();
+    result.longitudinalImpactParameterErr = impactParameterZ.second.error();
   }
-  if (impactParameter3d.first) {
-    result.distaceOfClosestApproach    = impactParameter3d.second.value();
-    result.distaceOfClosestApproachErr = impactParameter3d.second.error();
+  if (impactParameter3D.first) {
+    result.distaceOfClosestApproach       = impactParameter3D.second.value();
+    result.distaceOfClosestApproachErr    = impactParameter3D.second.error();
   }
 
-  // FIXME: add decay length calculation (VertexDistance3D)
-  // 
+  // compute decay length
+  
+  VertexDistance3D distance3D;
+
+  // Load the Primary Vertex Collection
+  // printf("compute3dDisplacement vertex (x,y,z): (%7.3f,%7.3f,%7.3f)\n", 
+  // 	 fit.refitVertex->position().x(),
+  // 	 fit.refitVertex->position().y(),
+  // 	 fit.refitVertex->position().z());
+
+  // printf("compute3dDisplacement pv (x,y,z): (%7.3f,%7.3f,%7.3f)\n", 
+  // 	 bestVertex->position().x(),
+  // 	 bestVertex->position().y(),
+  // 	 bestVertex->position().z());
+
+  auto dist = distance3D.distance(*bestVertex, fit.refitVertex->vertexState() );
+  result.decayLength    = dist.value();
+  result.decayLengthErr = dist.error();
+  // printf("compute3dDisplacement dist: %0.5f\n",result.decayLength);
+  // printf("compute3dDisplacement dist-man: %0.5f\n",sqrt(pow(fit.refitVertex->position().x()-bestVertex->position().x(),2)+
+  // 							pow(fit.refitVertex->position().y()-bestVertex->position().y(),2)+
+  // 							pow(fit.refitVertex->position().z()-bestVertex->position().z(),2)));
+
 
   return result;
 }

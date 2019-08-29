@@ -156,6 +156,8 @@ BxToMuMuBToKmumuMcTableVariables = merge_psets(
         gen_pdgId       = Var("userInt('gen_pdgId')",         int,   doc = "Gen match: kmm pdg Id"),
         gen_mass        = Var("userFloat('gen_mass')",        float, doc = "Gen match: kmm mass"),
         gen_pt          = Var("userFloat('gen_pt')",          float, doc = "Gen match: kmm pt"),
+        gen_prod_x      = Var("userFloat('gen_prod_x')",      float, doc = "Gen match: kmm mother production vertex x"),
+        gen_prod_y      = Var("userFloat('gen_prod_y')",      float, doc = "Gen match: kmm mother production vertex y"),
         gen_prod_z      = Var("userFloat('gen_prod_z')",      float, doc = "Gen match: kmm mother production vertex z"),
         gen_l3d         = Var("userFloat('gen_l3d')",         float, doc = "Gen match: kmm decay legnth 3D"),
         gen_lxy         = Var("userFloat('gen_lxy')",         float, doc = "Gen match: kmm decay legnth XY"),
