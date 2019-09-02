@@ -56,6 +56,8 @@ kinematic_pset = cms.PSet(
     kin_valid    = Var("userInt('kin_valid')",         int,   doc = "Kinematic fit: vertex validity"),
     kin_vtx_prob = Var("userFloat('kin_vtx_prob')",    float, doc = "Kinematic fit: vertex probability"),
     kin_mass     = Var("userFloat('kin_mass')",        float, doc = "Kinematic fit: vertex refitted mass"),
+    kin_pt       = Var("userFloat('kin_pt')",          float, doc = "Kinematic fit: vertex refitted pt"),
+    kin_eta      = Var("userFloat('kin_eta')",         float, doc = "Kinematic fit: vertex refitted eta"),
     kin_massErr  = Var("userFloat('kin_massErr')",     float, doc = "Kinematic fit: vertex refitted mass error"),
     kin_lxy      = Var("userFloat('kin_lxy')",         float, doc = "Kinematic fit: vertex displacement in XY plane wrt Beam Spot"),
     kin_slxy     = Var("userFloat('kin_sigLxy')",      float, doc = "Kinematic fit: vertex displacement significance in XY plane wrt Beam Spot"),
@@ -70,6 +72,12 @@ kinematic_pset = cms.PSet(
     kin_pv_zErr  = Var("userFloat('kin_pv_zErr')",     float, doc = "Kinematic fit: primary vertex z-error"),
     kin_l3d      = Var("userFloat('kin_l3d')",         float, doc = "Kinematic fit: decay length wrt Primary Vertex in 3D"),
     kin_sl3d     = Var("userFloat('kin_sl3d')",        float, doc = "Kinematic fit: decay length significance wrt Primary Vertex in 3D"),
+    kin_mu1pt    = Var("userFloat('kin_mu1pt')",       float, doc = "Kinematic fit: refitted muon 1 pt"),
+    kin_mu1eta   = Var("userFloat('kin_mu1eta')",      float, doc = "Kinematic fit: refitted muon 1 eta"),
+    kin_mu1phi   = Var("userFloat('kin_mu1phi')",      float, doc = "Kinematic fit: refitted muon 1 phi"),
+    kin_mu2pt    = Var("userFloat('kin_mu2pt')",       float, doc = "Kinematic fit: refitted muon 2 pt"),
+    kin_mu2eta   = Var("userFloat('kin_mu2eta')",      float, doc = "Kinematic fit: refitted muon 2 eta"),
+    kin_mu2phi   = Var("userFloat('kin_mu2phi')",      float, doc = "Kinematic fit: refitted muon 2 phi"),
 )
 
 BxToMuMuDiMuonTableVariables = merge_psets(
@@ -77,6 +85,7 @@ BxToMuMuDiMuonTableVariables = merge_psets(
         mu1_index    = Var("userInt('mu1_index')",         int,   doc = "Index of corresponding leading muon"),
         mu2_index    = Var("userInt('mu2_index')",         int,   doc = "Index of corresponding subleading muon"),
         mass         = Var("mass",                         float, doc = "Unfit invariant mass"),
+        doca         = Var("userFloat('doca')",            float, doc = "Distance of closest approach of muons"),
         nTrks        = Var("userInt('nTrks')",             int,   doc = "Number of tracks compatible with the vertex"),
         nDisTrks     = Var("userInt('nDisTrks')",          int,   doc = "Number of displaced tracks compatible with the vertex"),
         # Kalman Fit

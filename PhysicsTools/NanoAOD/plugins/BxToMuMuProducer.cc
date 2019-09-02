@@ -118,6 +118,18 @@ struct KinematicFitResult{
     return refitMother->currentState().mass();
   }
 
+  GlobalVector p3() const
+  {
+    if ( not valid() ) return GlobalVector();
+    return refitMother->currentState().globalMomentum();
+  }
+
+  GlobalVector dau_p3(unsigned int i) const
+  {
+    if ( not valid() or i>=refitDaughters.size() ) return GlobalVector();
+    return refitDaughters.at(i)->currentState().globalMomentum();
+  }
+
   float massErr() const
   {
     if ( not valid() ) return -1.0;
@@ -346,6 +358,14 @@ void addFitInfo(pat::CompositeCandidate& cand, const KinematicFitResult& fit, st
   cand.addUserFloat( name+"_vtx_yErr",    fit.valid()?sqrt(fit.refitVertex->error().cyy()):0 );
   cand.addUserFloat( name+"_vtx_z",       fit.valid()?fit.refitVertex->position().z():0 );
   cand.addUserFloat( name+"_vtx_zErr",    fit.valid()?sqrt(fit.refitVertex->error().czz()):0 );
+  cand.addUserFloat( name+"_pt",          fit.p3().perp() );
+  cand.addUserFloat( name+"_eta",         fit.p3().eta() );
+  cand.addUserFloat( name+"_mu1pt",       fit.dau_p3(0).perp() );
+  cand.addUserFloat( name+"_mu1eta",      fit.dau_p3(0).eta() );
+  cand.addUserFloat( name+"_mu1phi",      fit.dau_p3(0).phi() );
+  cand.addUserFloat( name+"_mu2pt",       fit.dau_p3(1).perp() );
+  cand.addUserFloat( name+"_mu2eta",      fit.dau_p3(1).eta() );
+  cand.addUserFloat( name+"_mu2phi",      fit.dau_p3(1).phi() );
   
   // IP info
   cand.addUserFloat( name+"_l3d",         ipInfo.decayLength);
@@ -409,10 +429,10 @@ void BxToMuMuProducer::produce(edm::Event& iEvent, const edm::EventSetup& iSetup
 	  if (muon2.pt() > muon1.pt()) continue;
 	  if (not isGoodMuon(muon2)) continue;
 	  
-	  if (maxTwoTrackDOCA_>0 and 
-	      distanceOfClosestApproach(muon1.innerTrack().get(),
-					muon2.innerTrack().get(),
-					theTTBuilder) > maxTwoTrackDOCA_) continue;
+	  auto mm_doca = distanceOfClosestApproach(muon1.innerTrack().get(),
+						   muon2.innerTrack().get(),
+						   theTTBuilder);
+	  if (maxTwoTrackDOCA_>0 and mm_doca > maxTwoTrackDOCA_) continue;
 	  if (diMuonCharge_ && muon1.charge()*muon2.charge()>0) continue;
 
 	  pat::CompositeCandidate dimuonCand;
@@ -422,6 +442,7 @@ void BxToMuMuProducer::produce(edm::Event& iEvent, const edm::EventSetup& iSetup
 
 	  dimuonCand.addUserInt("mu1_index", i);
 	  dimuonCand.addUserInt("mu2_index", j);
+	  dimuonCand.addUserFloat( "doca", mm_doca);
 
 	  // Kalman Vertex Fit
 	  auto kalmanMuMuVertexFit = vertexMuonsWithKalmanFitter(theTTBuilder, muon1, muon2);
