@@ -47,12 +47,10 @@
 
 // TODO
 // - add pointing constraint
-// - alpha3D
 // - m1 and m2 isolation
 // - Chi2/ndof
 // - bkmm/mm pt
 // - bkmm/mm eta
-// - doca mm
 // - decay time
 // - decay length significance (doesn't look right)
 // - delta3D ?
@@ -136,6 +134,17 @@ struct KinematicFitResult{
     return sqrt(refitMother->currentState().kinematicParametersError().matrix()(6,6));
   }
 
+  float chi2() const
+  {
+    if ( not valid() ) return -1.0;
+    return refitVertex->chiSquared();
+  }
+
+  float ndof() const
+  {
+    return refitVertex->degreesOfFreedom();
+  }
+
   float vtxProb() const
   {
     if ( not valid() ) return -1.0;
@@ -178,14 +187,19 @@ struct KalmanVertexFitResult{
 };
 
 struct DisplacementInformationIn3D{
-  float decayLength, decayLengthErr, 
+  double decayLength, decayLengthErr, decayLength2, decayLength2Err, 
     distaceOfClosestApproach, distaceOfClosestApproachErr, 
-    longitudinalImpactParameter, longitudinalImpactParameterErr;
-  const reco::Vertex* pv;
-  DisplacementInformationIn3D():decayLength(-1.0),decayLengthErr(0.),
+    distaceOfClosestApproach2, distaceOfClosestApproach2Err, 
+    longitudinalImpactParameter, longitudinalImpactParameterErr,
+    longitudinalImpactParameter2, longitudinalImpactParameter2Err,
+    cosAlpha;
+  const reco::Vertex *pv,*pv2;
+  DisplacementInformationIn3D():decayLength(-1.0),decayLengthErr(0.),decayLength2(-1.0),decayLength2Err(0.),
 				distaceOfClosestApproach(-1.0),distaceOfClosestApproachErr(0.0),
-				longitudinalImpactParameter(0.0), longitudinalImpactParameterErr(0.),
-				pv(0){};
+				distaceOfClosestApproach2(-1.0),distaceOfClosestApproach2Err(0.0),
+				longitudinalImpactParameter2(0.0), longitudinalImpactParameter2Err(0.), 
+				cosAlpha(-999.),
+				pv(0),pv2(0){};
 };
 
 LorentzVector makeLorentzVectorFromPxPyPzM(double px, double py, double pz, double m){
@@ -207,6 +221,11 @@ struct GenEventInfo{};
 
 
 using namespace std;
+
+
+///////////////////////////////////////////////////////////////////////////
+///                             P L U G I N
+///////////////////////////////////////////////////////////////////////////
 
 class BxToMuMuProducer : public edm::EDProducer {
     
@@ -344,14 +363,16 @@ bool BxToMuMuProducer::isGoodMuon(const pat::Muon& muon){
 }
 
 void addFitInfo(pat::CompositeCandidate& cand, const KinematicFitResult& fit, std::string name, 
-		const DisplacementInformationIn3D& ipInfo = DisplacementInformationIn3D() ){
+		const DisplacementInformationIn3D& displacement3d = DisplacementInformationIn3D() ){
   cand.addUserInt(   name+"_valid",       fit.valid() );
   cand.addUserFloat( name+"_vtx_prob",    fit.vtxProb() );
+  cand.addUserFloat( name+"_vtx_chi2dof", fit.chi2()>0?fit.chi2()/fit.ndof():-1);
   cand.addUserFloat( name+"_mass",        fit.mass() );
   cand.addUserFloat( name+"_massErr",     fit.massErr() );
   cand.addUserFloat( name+"_lxy",         fit.lxy );
   cand.addUserFloat( name+"_sigLxy",      fit.sigLxy );
-  cand.addUserFloat( name+"_cosAlpha",    fit.cosAlpha );
+  cand.addUserFloat( name+"_cosAlphaXY",  fit.cosAlpha );
+  cand.addUserFloat( name+"_alpha",       fabs(displacement3d.cosAlpha)<=1?acos(displacement3d.cosAlpha):-999. );
   cand.addUserFloat( name+"_vtx_x",       fit.valid()?fit.refitVertex->position().x():0 );
   cand.addUserFloat( name+"_vtx_xErr",    fit.valid()?sqrt(fit.refitVertex->error().cxx()):0 );
   cand.addUserFloat( name+"_vtx_y",       fit.valid()?fit.refitVertex->position().y():0 );
@@ -368,11 +389,16 @@ void addFitInfo(pat::CompositeCandidate& cand, const KinematicFitResult& fit, st
   cand.addUserFloat( name+"_mu2phi",      fit.dau_p3(1).phi() );
   
   // IP info
-  cand.addUserFloat( name+"_l3d",         ipInfo.decayLength);
-  cand.addUserFloat( name+"_sl3d",        ipInfo.decayLengthErr>0?ipInfo.decayLength/ipInfo.decayLengthErr:0);
-  cand.addUserFloat( name+"_pv_z",        ipInfo.pv?ipInfo.pv->position().z():0);
-  cand.addUserFloat( name+"_pv_zErr",     ipInfo.pv?ipInfo.pv->zError():0);
-
+  cand.addUserFloat( name+"_l3d",         displacement3d.decayLength);
+  cand.addUserFloat( name+"_sl3d",        displacement3d.decayLengthErr>0?displacement3d.decayLength/displacement3d.decayLengthErr:0);
+  cand.addUserFloat( name+"_pv_z",        displacement3d.pv?displacement3d.pv->position().z():0);
+  cand.addUserFloat( name+"_pv_zErr",     displacement3d.pv?displacement3d.pv->zError():0);
+  cand.addUserFloat( name+"_pvip",        displacement3d.distaceOfClosestApproach);
+  cand.addUserFloat( name+"_pvipErr",     displacement3d.distaceOfClosestApproachErr);
+  cand.addUserFloat( name+"_pvlip",       displacement3d.longitudinalImpactParameter);
+  cand.addUserFloat( name+"_pvlipErr",    displacement3d.longitudinalImpactParameterErr);
+  cand.addUserFloat( name+"_pv2lip",      displacement3d.longitudinalImpactParameter2);
+  cand.addUserFloat( name+"_pv2lipErr",   displacement3d.longitudinalImpactParameter2Err);
 }
 
 void BxToMuMuProducer::produce(edm::Event& iEvent, const edm::EventSetup& iSetup) {
@@ -460,7 +486,7 @@ void BxToMuMuProducer::produce(edm::Event& iEvent, const edm::EventSetup& iSetup
 	  // 	 kinematicMuMuVertexFit.refitVertex->position().x(),
 	  // 	 kinematicMuMuVertexFit.refitVertex->position().y(),
 	  // 	 kinematicMuMuVertexFit.refitVertex->position().z());
-	  auto displacement3D = compute3dDisplacement(kinematicMuMuVertexFit, *pvHandle.product());
+	  auto displacement3D = compute3dDisplacement(kinematicMuMuVertexFit, *pvHandle.product(),true);
 	  addFitInfo(dimuonCand, kinematicMuMuVertexFit, "kin", displacement3D);
 	  
 	  if (isMC_){
@@ -565,7 +591,7 @@ void BxToMuMuProducer::produce(edm::Event& iEvent, const edm::EventSetup& iSetup
 	    
 	    auto bToKJPsiMuMu_MC = fitBToKJPsiMuMuNew(kinematicMuMuVertexFit.refitTree, pfCand, theTTBuilder, true);
 	    bToKJPsiMuMu_MC.postprocess(beamSpot);
-	    auto bToKJPsiMuMu_MC_displacement = compute3dDisplacement(bToKJPsiMuMu_MC, *pvHandle.product());
+	    auto bToKJPsiMuMu_MC_displacement = compute3dDisplacement(bToKJPsiMuMu_MC, *pvHandle.product(),true);
 	    addFitInfo(btokmmCand, bToKJPsiMuMu_MC, "jpsimc", bToKJPsiMuMu_MC_displacement);
 	      
 	    // broken pointing constraint
@@ -1003,9 +1029,30 @@ DisplacementInformationIn3D BxToMuMuProducer::compute3dDisplacement(const Kinema
       }
     } else{
       auto impactParameterZ  = IPTools::signedDecayLength3D(candTransientTrack, GlobalVector(0,0,1), vertex);
-      if (impactParameterZ.first and impactParameterZ.second.value() < minDistance){
-	minDistance = impactParameterZ.second.value();
+      double distance = fabs(impactParameterZ.second.value());
+      if (impactParameterZ.first and distance < minDistance){
+	minDistance = distance;
 	bestVertex = &vertex;
+      }
+    }
+  }
+
+  // find second best vertex
+  const reco::Vertex* bestVertex2(0);
+  double minDistance2(999.);
+  for ( const auto & vertex: vertices ){
+    if (closestIn3D){
+      auto impactParameter3D = IPTools::absoluteImpactParameter3D(candTransientTrack, vertex);
+      if (impactParameter3D.first and impactParameter3D.second.value() < minDistance2 and impactParameter3D.second.value() > minDistance){
+	minDistance2 = impactParameter3D.second.value();
+	bestVertex2 = &vertex;
+      }
+    } else{
+      auto impactParameterZ  = IPTools::signedDecayLength3D(candTransientTrack, GlobalVector(0,0,1), vertex);
+      double distance = fabs(impactParameterZ.second.value());
+      if (impactParameterZ.first and distance < minDistance2 and distance > minDistance){
+	minDistance2 = distance;
+	bestVertex2 = &vertex;
       }
     }
   }
@@ -1025,29 +1072,43 @@ DisplacementInformationIn3D BxToMuMuProducer::compute3dDisplacement(const Kinema
   }
 
   // compute decay length
-  
   VertexDistance3D distance3D;
-
-  // Load the Primary Vertex Collection
-  // printf("compute3dDisplacement vertex (x,y,z): (%7.3f,%7.3f,%7.3f)\n", 
-  // 	 fit.refitVertex->position().x(),
-  // 	 fit.refitVertex->position().y(),
-  // 	 fit.refitVertex->position().z());
-
-  // printf("compute3dDisplacement pv (x,y,z): (%7.3f,%7.3f,%7.3f)\n", 
-  // 	 bestVertex->position().x(),
-  // 	 bestVertex->position().y(),
-  // 	 bestVertex->position().z());
-
   auto dist = distance3D.distance(*bestVertex, fit.refitVertex->vertexState() );
   result.decayLength    = dist.value();
   result.decayLengthErr = dist.error();
-  // printf("compute3dDisplacement dist: %0.5f\n",result.decayLength);
-  // printf("compute3dDisplacement dist-man: %0.5f\n",sqrt(pow(fit.refitVertex->position().x()-bestVertex->position().x(),2)+
-  // 							pow(fit.refitVertex->position().y()-bestVertex->position().y(),2)+
-  // 							pow(fit.refitVertex->position().z()-bestVertex->position().z(),2)));
+  
+  if (bestVertex2){
+    auto impactParameter3D2 = IPTools::absoluteImpactParameter3D(candTransientTrack, *bestVertex2);
+    auto impactParameterZ2  = IPTools::signedDecayLength3D(candTransientTrack, GlobalVector(0,0,1), *bestVertex2);
+    result.pv2 = bestVertex2;
+    if (impactParameterZ2.first) {
+      result.longitudinalImpactParameter2    = impactParameterZ2.second.value();
+      result.longitudinalImpactParameter2Err = impactParameterZ2.second.error();
+    }
+    if (impactParameter3D2.first) {
+      result.distaceOfClosestApproach2       = impactParameter3D2.second.value();
+      result.distaceOfClosestApproach2Err    = impactParameter3D2.second.error();
+    }
 
+    // compute decay length
+    VertexDistance3D distance3D;
+    auto dist = distance3D.distance(*bestVertex2, fit.refitVertex->vertexState() );
+    result.decayLength2    = dist.value();
+    result.decayLength2Err = dist.error();
+  }
 
+  // cosAlpha
+
+  TVector3 plab(fit.refitMother->currentState().globalMomentum().x(),
+		fit.refitMother->currentState().globalMomentum().y(),
+		fit.refitMother->currentState().globalMomentum().z());
+  TVector3 p1(bestVertex->x(), bestVertex->y(), bestVertex->z());
+  TVector3 p2(fit.refitVertex->vertexState().position().x(), 
+	      fit.refitVertex->vertexState().position().y(), 
+	      fit.refitVertex->vertexState().position().z());
+  TVector3 pDiff = p2-p1;
+  result.cosAlpha  = plab.Dot(pDiff) / (plab.Mag() * pDiff.Mag());
+    
   return result;
 }
 
