@@ -243,28 +243,23 @@ private:
   bool isGoodMuon(const pat::Muon& muon);
     
   KalmanVertexFitResult 
-  vertexWithKalmanFitter(edm::ESHandle<TransientTrackBuilder>& theTTBuilder,
-			 std::vector<const reco::Track*> trks, 
+  vertexWithKalmanFitter( std::vector<const reco::Track*> trks, 
 			 std::vector<float> masses);
 
   KalmanVertexFitResult 
-  vertexMuonsWithKalmanFitter(edm::ESHandle<TransientTrackBuilder>& theTTBuilder,
-			      const pat::Muon& muon1,
+  vertexMuonsWithKalmanFitter(const pat::Muon& muon1,
 			      const pat::Muon& muon2);
 
   KinematicFitResult 
-  vertexWithKinematicFitter(edm::ESHandle<TransientTrackBuilder>& theTTBuilder,
-			    std::vector<const reco::Track*> trks,
+  vertexWithKinematicFitter(std::vector<const reco::Track*> trks,
 			    std::vector<float> masses);
 
   KinematicFitResult 
-  vertexMuonsWithKinematicFitter(edm::ESHandle<TransientTrackBuilder>& theTTBuilder,
-				 const pat::Muon& muon1,
+  vertexMuonsWithKinematicFitter(const pat::Muon& muon1,
 				 const pat::Muon& muon2);
 
   KinematicFitResult 
-  vertexWithKinematicFitter(edm::ESHandle<TransientTrackBuilder>& theTTBuilder,
-			    const pat::Muon& muon1,
+  vertexWithKinematicFitter(const pat::Muon& muon1,
 			    const pat::Muon& muon2,
 			    const pat::PackedCandidate& pfCand);
 
@@ -272,13 +267,11 @@ private:
   KinematicFitResult
   fitBToKJPsiMuMu( RefCountedKinematicParticle jpsi,
 		   const pat::PackedCandidate& kaon,
-		   edm::ESHandle<TransientTrackBuilder> theTTBuilder,
 		   bool applyJpsiMassConstraint);
 
   KinematicFitResult
   fitBToKJPsiMuMuNew( RefCountedKinematicTree jpsi,
 		      const pat::PackedCandidate& kaon,
-		      edm::ESHandle<TransientTrackBuilder> theTTBuilder,
 		      bool applyJpsiMassConstraint);
 
   KinematicFitResult
@@ -286,16 +279,15 @@ private:
 			       const reco::Vertex& primaryVertex);
 
   pair<double,double> computeDCA(const pat::PackedCandidate &kaon,
-   				 edm::ESHandle<MagneticField> bFieldHandle,
-				 reco::BeamSpot beamSpot);
+   				 reco::BeamSpot beamSpot);
   GenMatchInfo getGenMatchInfo( const edm::View<reco::GenParticle>& genParticles,
 				const pat::Muon& muon1,
 				const pat::Muon& muon2,
 				const pat::PackedCandidate* kaon = 0 );
   // Two track DOCA
   float distanceOfClosestApproach( const reco::Track* track1,
-				   const reco::Track* track2,
-				   edm::ESHandle<TransientTrackBuilder> theTTBuilder);
+				   const reco::Track* track2 );
+				   
   
   DisplacementInformationIn3D compute3dDisplacement(const KinematicFitResult& fit,
 						    const reco::VertexCollection& vertices,
@@ -308,6 +300,9 @@ private:
   edm::EDGetTokenT<std::vector<pat::Muon>> muonToken_;
   edm::EDGetTokenT<edm::View<pat::PackedCandidate>> pfCandToken_;
   edm::EDGetTokenT<edm::View<reco::GenParticle> >   prunedGenToken_;
+
+  edm::ESHandle<TransientTrackBuilder> theTTBuilder_;
+  edm::ESHandle<MagneticField> bFieldHandle_;
 
   bool isMC_;
 
@@ -403,11 +398,8 @@ void addFitInfo(pat::CompositeCandidate& cand, const KinematicFitResult& fit, st
 
 void BxToMuMuProducer::produce(edm::Event& iEvent, const edm::EventSetup& iSetup) {
 
-    edm::ESHandle<MagneticField> bFieldHandle;
-    edm::ESHandle<TransientTrackBuilder> theTTBuilder;
-
-    iSetup.get<IdealMagneticFieldRecord>().get(bFieldHandle);
-    iSetup.get<TransientTrackRecord>().get("TransientTrackBuilder",theTTBuilder);
+    iSetup.get<IdealMagneticFieldRecord>().get(bFieldHandle_);
+    iSetup.get<TransientTrackRecord>().get("TransientTrackBuilder",theTTBuilder_);
 
     edm::Handle<reco::BeamSpot> beamSpotHandle;
     
@@ -456,8 +448,7 @@ void BxToMuMuProducer::produce(edm::Event& iEvent, const edm::EventSetup& iSetup
 	  if (not isGoodMuon(muon2)) continue;
 	  
 	  auto mm_doca = distanceOfClosestApproach(muon1.innerTrack().get(),
-						   muon2.innerTrack().get(),
-						   theTTBuilder);
+						   muon2.innerTrack().get());
 	  if (maxTwoTrackDOCA_>0 and mm_doca > maxTwoTrackDOCA_) continue;
 	  if (diMuonCharge_ && muon1.charge()*muon2.charge()>0) continue;
 
@@ -471,7 +462,7 @@ void BxToMuMuProducer::produce(edm::Event& iEvent, const edm::EventSetup& iSetup
 	  dimuonCand.addUserFloat( "doca", mm_doca);
 
 	  // Kalman Vertex Fit
-	  auto kalmanMuMuVertexFit = vertexMuonsWithKalmanFitter(theTTBuilder, muon1, muon2);
+	  auto kalmanMuMuVertexFit = vertexMuonsWithKalmanFitter(muon1, muon2);
 	  kalmanMuMuVertexFit.postprocess(beamSpot);
 	  dimuonCand.addUserInt(   "kalman_valid",    kalmanMuMuVertexFit.valid);
 	  dimuonCand.addUserFloat( "kalman_vtx_prob", kalmanMuMuVertexFit.vtxProb);
@@ -480,7 +471,7 @@ void BxToMuMuProducer::produce(edm::Event& iEvent, const edm::EventSetup& iSetup
 	  dimuonCand.addUserFloat( "kalman_sigLxy",   kalmanMuMuVertexFit.sigLxy );
 	  
 	  // Kinematic Fits
-	  auto kinematicMuMuVertexFit = vertexMuonsWithKinematicFitter(theTTBuilder, muon1, muon2);
+	  auto kinematicMuMuVertexFit = vertexMuonsWithKinematicFitter(muon1, muon2);
 	  kinematicMuMuVertexFit.postprocess(beamSpot);
 	  // printf("kinematicMuMuVertexFit (x,y,z): (%7.3f,%7.3f,%7.3f)\n", 
 	  // 	 kinematicMuMuVertexFit.refitVertex->position().x(),
@@ -522,13 +513,11 @@ void BxToMuMuProducer::produce(edm::Event& iEvent, const edm::EventSetup& iSetup
 	    if (pfCand.charge() == 0 ) continue;
 	    if (!pfCand.hasTrackDetails()) continue;
 	    double mu1_kaon_doca = distanceOfClosestApproach(muon1.innerTrack().get(),
-							     pfCand.bestTrack(),
-							     theTTBuilder);
+							     pfCand.bestTrack());
 	    double mu2_kaon_doca = distanceOfClosestApproach(muon2.innerTrack().get(),
-							     pfCand.bestTrack(),
-							     theTTBuilder);
+							     pfCand.bestTrack());
 	    if (mu1_kaon_doca<maxTwoTrackDOCA_ and mu2_kaon_doca<maxTwoTrackDOCA_){
-	      auto fit_result = vertexWithKinematicFitter(theTTBuilder, muon1, muon2, pfCand);
+	      auto fit_result = vertexWithKinematicFitter(muon1, muon2, pfCand);
 	      if ( fit_result.vtxProb()>0.1 ) {
 		nTracksCompatibleWithTheMuMuVertex++;
 		double sigDxy = pfCand.bestTrack()->dxyError()>0 ? fabs(pfCand.bestTrack()->dxy(beamSpot))/pfCand.bestTrack()->dxyError():0.0;
@@ -580,16 +569,16 @@ void BxToMuMuProducer::produce(edm::Event& iEvent, const edm::EventSetup& iSetup
 	    // 	btokmmCand.addUserInt("kaon_mc_pdgId", 0);
 	    // }
 	    
-	    auto bToKJPsiMuMuNoMassConstraint = fitBToKJPsiMuMu(kinematicMuMuVertexFit.refitMother, pfCand, theTTBuilder, false);
+	    auto bToKJPsiMuMuNoMassConstraint = fitBToKJPsiMuMu(kinematicMuMuVertexFit.refitMother, pfCand, false);
 	    bToKJPsiMuMuNoMassConstraint.postprocess(beamSpot);
 	    addFitInfo(btokmmCand, bToKJPsiMuMuNoMassConstraint, "nomc");
 	      
 	    // worse performing option
-	    // auto bToKJPsiMuMuWithMassConstraint = fitBToKJPsiMuMu(kinematicMuMuVertexFit.refitMother, pfCand, theTTBuilder, true);
+	    // auto bToKJPsiMuMuWithMassConstraint = fitBToKJPsiMuMu(kinematicMuMuVertexFit.refitMother, pfCand, true);
 	    // bToKJPsiMuMuWithMassConstraint.postprocess(beamSpot);
 	    // addFitInfo(btokmmCand, bToKJPsiMuMuWithMassConstraint, "jpsimc");
 	    
-	    auto bToKJPsiMuMu_MC = fitBToKJPsiMuMuNew(kinematicMuMuVertexFit.refitTree, pfCand, theTTBuilder, true);
+	    auto bToKJPsiMuMu_MC = fitBToKJPsiMuMuNew(kinematicMuMuVertexFit.refitTree, pfCand, true);
 	    bToKJPsiMuMu_MC.postprocess(beamSpot);
 	    auto bToKJPsiMuMu_MC_displacement = compute3dDisplacement(bToKJPsiMuMu_MC, *pvHandle.product(),true);
 	    addFitInfo(btokmmCand, bToKJPsiMuMu_MC, "jpsimc", bToKJPsiMuMu_MC_displacement);
@@ -615,15 +604,14 @@ void BxToMuMuProducer::produce(edm::Event& iEvent, const edm::EventSetup& iSetup
 }
 
 KalmanVertexFitResult 
-BxToMuMuProducer::vertexWithKalmanFitter(edm::ESHandle<TransientTrackBuilder>& theTTBuilder,
-					 std::vector<const reco::Track*> trks, 
+BxToMuMuProducer::vertexWithKalmanFitter(std::vector<const reco::Track*> trks, 
 					 std::vector<float> masses){
   if (trks.size()!=masses.size()) 
     throw cms::Exception("Error") << "number of tracks and number of masses should match";
   KalmanVertexFitResult results;
   std::vector<reco::TransientTrack> transTrks;
   for (auto trk: trks){
-    transTrks.push_back((*theTTBuilder).build(trk));
+    transTrks.push_back((*theTTBuilder_).build(trk));
   }
   KalmanVertexFitter kvf(true);
   TransientVertex tv = kvf.vertex(transTrks);
@@ -647,8 +635,7 @@ BxToMuMuProducer::vertexWithKalmanFitter(edm::ESHandle<TransientTrackBuilder>& t
 }
 
 KalmanVertexFitResult 
-BxToMuMuProducer::vertexMuonsWithKalmanFitter(edm::ESHandle<TransientTrackBuilder>& theTTBuilder,
-					      const pat::Muon& muon1,
+BxToMuMuProducer::vertexMuonsWithKalmanFitter(const pat::Muon& muon1,
 					      const pat::Muon& muon2)
 {
   std::vector<const reco::Track*> trks;
@@ -657,13 +644,12 @@ BxToMuMuProducer::vertexMuonsWithKalmanFitter(edm::ESHandle<TransientTrackBuilde
   masses.push_back(MuonMass_);
   trks.push_back( muon2.innerTrack().get() );
   masses.push_back(MuonMass_);
-  return vertexWithKalmanFitter(theTTBuilder,trks,masses);
+  return vertexWithKalmanFitter(trks,masses);
 }
 
 
 KinematicFitResult 
-BxToMuMuProducer::vertexWithKinematicFitter(edm::ESHandle<TransientTrackBuilder>& theTTBuilder,
-					    std::vector<const reco::Track*> trks,
+BxToMuMuProducer::vertexWithKinematicFitter(std::vector<const reco::Track*> trks,
 					    std::vector<float> masses)
 {
   // https://twiki.cern.ch/twiki/bin/view/CMSPublic/SWGuideKinematicVertexFit
@@ -681,7 +667,7 @@ BxToMuMuProducer::vertexWithKinematicFitter(edm::ESHandle<TransientTrackBuilder>
   double ndf = 0.;
 
   for (unsigned int i=0; i<trks.size(); ++i){
-    transTrks.push_back((*theTTBuilder).build(trks[i]));
+    transTrks.push_back((*theTTBuilder_).build(trks[i]));
     particles.push_back(factory.particle(transTrks.back(),masses[i],chi,ndf,MuonMassErr_));
   }
 
@@ -712,8 +698,7 @@ BxToMuMuProducer::vertexWithKinematicFitter(edm::ESHandle<TransientTrackBuilder>
 }
 
 KinematicFitResult
-BxToMuMuProducer::vertexMuonsWithKinematicFitter(edm::ESHandle<TransientTrackBuilder>& theTTBuilder,
-						 const pat::Muon& muon1,
+BxToMuMuProducer::vertexMuonsWithKinematicFitter(const pat::Muon& muon1,
 						 const pat::Muon& muon2)
 {
   std::vector<const reco::Track*> trks;
@@ -722,12 +707,11 @@ BxToMuMuProducer::vertexMuonsWithKinematicFitter(edm::ESHandle<TransientTrackBui
   masses.push_back(MuonMass_);
   trks.push_back( muon2.innerTrack().get() );
   masses.push_back(MuonMass_);
-  return vertexWithKinematicFitter(theTTBuilder,trks,masses);
+  return vertexWithKinematicFitter(trks,masses);
 }
 
 KinematicFitResult
-BxToMuMuProducer::vertexWithKinematicFitter(edm::ESHandle<TransientTrackBuilder>& theTTBuilder,
-					    const pat::Muon& muon1,
+BxToMuMuProducer::vertexWithKinematicFitter(const pat::Muon& muon1,
 					    const pat::Muon& muon2,
 					    const pat::PackedCandidate& pion)
 {
@@ -739,17 +723,16 @@ BxToMuMuProducer::vertexWithKinematicFitter(edm::ESHandle<TransientTrackBuilder>
   masses.push_back(MuonMass_);
   trks.push_back( pion.bestTrack() );
   masses.push_back(pionMass_);
-  return vertexWithKinematicFitter(theTTBuilder,trks,masses);
+  return vertexWithKinematicFitter(trks,masses);
 }
 
 KinematicFitResult
 BxToMuMuProducer::fitBToKJPsiMuMu( RefCountedKinematicParticle refitMuMu,
 				   const pat::PackedCandidate &kaon,
-				   edm::ESHandle<TransientTrackBuilder> theTTBuilder,
 				   bool applyJpsiMassConstraint)
 {
   const reco::TransientTrack mmTT = refitMuMu->refittedTransientTrack();
-  const reco::TransientTrack kaonTT = theTTBuilder->build(kaon.bestTrack());
+  const reco::TransientTrack kaonTT = theTTBuilder_->build(kaon.bestTrack());
 
   KinematicParticleFactoryFromTransientTrack partFactory;
   KinematicParticleVertexFitter fitter;
@@ -799,7 +782,6 @@ BxToMuMuProducer::fitBToKJPsiMuMu( RefCountedKinematicParticle refitMuMu,
 KinematicFitResult
 BxToMuMuProducer::fitBToKJPsiMuMuNew( RefCountedKinematicTree jpsiTree,
 				      const pat::PackedCandidate& kaon,
-				      edm::ESHandle<TransientTrackBuilder> theTTBuilder,
 				      bool applyJpsiMassConstraint)
 {
   KinematicFitResult result; 
@@ -816,7 +798,7 @@ BxToMuMuProducer::fitBToKJPsiMuMuNew( RefCountedKinematicTree jpsiTree,
     jpsiTree = csFitter.fit(jpsi_mc, jpsiTree);
   }
 
-  const reco::TransientTrack kaonTT = theTTBuilder->build(kaon.bestTrack());
+  const reco::TransientTrack kaonTT = theTTBuilder_->build(kaon.bestTrack());
 
   KinematicParticleFactoryFromTransientTrack partFactory;
   KinematicParticleVertexFitter fitter;
@@ -899,10 +881,9 @@ BxToMuMuProducer::refitWithPointingConstraint( RefCountedKinematicTree tree,
 }
 
 pair<double,double> BxToMuMuProducer::computeDCA(const pat::PackedCandidate &kaon,
-                                                 edm::ESHandle<MagneticField> bFieldHandle,
                                                  reco::BeamSpot beamSpot){
 
-  const reco::TransientTrack trackTT((*(kaon.bestTrack())), &(*bFieldHandle));
+  const reco::TransientTrack trackTT((*(kaon.bestTrack())), &(*bFieldHandle_));
 
   TrajectoryStateClosestToPoint theDCAXBS = trackTT.trajectoryStateClosestToPoint( GlobalPoint(beamSpot.position().x(),beamSpot.position().y(),beamSpot.position().z()) );  
   
@@ -991,12 +972,11 @@ GenMatchInfo BxToMuMuProducer::getGenMatchInfo( const edm::View<reco::GenParticl
 }
 
 float BxToMuMuProducer::distanceOfClosestApproach( const reco::Track* track1,
-						   const reco::Track* track2,
-						   edm::ESHandle<TransientTrackBuilder> theTTBuilder)
+						   const reco::Track* track2)
 {
   TwoTrackMinimumDistance md;
-  const reco::TransientTrack tt1 = theTTBuilder->build(track1);
-  const reco::TransientTrack tt2 = theTTBuilder->build(track2);
+  const reco::TransientTrack tt1 = theTTBuilder_->build(track1);
+  const reco::TransientTrack tt2 = theTTBuilder_->build(track2);
   if ( not md.calculate( tt1.initialFreeState(), tt2.initialFreeState() ) ) return -1.0;
   return md.distance();
 }
