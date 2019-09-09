@@ -29,6 +29,7 @@
 #include "RecoVertex/KalmanVertexFit/interface/KalmanVertexFitter.h"
 #include "TrackingTools/PatternTools/interface/TwoTrackMinimumDistance.h"
 #include "TrackingTools/IPTools/interface/IPTools.h"
+#include "TrackingTools/GeomPropagators/interface/AnalyticalImpactPointExtrapolator.h"
 
 #include "CommonTools/CandUtils/interface/AddFourMomenta.h"
 
@@ -217,8 +218,73 @@ struct GenMatchInfo{
 		 kmm_pdgId(0), mu1_pt(0), mu2_pt(0), kaon_pt(0), mm_mass(0), mm_pt(0), 
 		 kmm_mass(0), kmm_pt(0){}
 };
+
 struct GenEventInfo{};
 
+struct CloseTrack{
+  float svDoca, svDocaErr, svProb,
+    pvDoca, pvDocaErr,
+    impactParameterSignificanceBS;
+  const pat::PackedCandidate* pfCand;
+  CloseTrack(): svDoca(-1), svDocaErr(-1), svProb(-1),
+		pvDoca(-1), pvDocaErr(-1),
+		impactParameterSignificanceBS(-1),
+		pfCand(0)
+  {};
+};
+
+
+struct CloseTrackInfo{
+  std::vector<CloseTrack> tracks;
+  unsigned int nTracksByVertexProbability(double minProb = 0.1, 
+					  double minIpSignificance = -1,
+					  int pvIndex = -1,
+					  const pat::PackedCandidate* ignoreTrack1 = 0)
+  {
+    unsigned int n = 0;
+    for (auto track: tracks){
+      if (ignoreTrack1 and track.pfCand==ignoreTrack1) continue;
+      if (minIpSignificance>0 and track.impactParameterSignificanceBS<minIpSignificance) continue;
+      if (track.svProb<minProb) continue;
+      if (pvIndex >= 0 and int(track.pfCand->vertexRef().key())!=pvIndex) continue;
+      n++;
+    }
+    return n;
+  }
+  unsigned int nTracksByDisplacementSignificance(double max_svDoca = 0.03, 
+						 double maxSignificance = -1,
+						 int pvIndex = -1,
+						 const pat::PackedCandidate* ignoreTrack1 = 0)
+  {
+    unsigned int n = 0;
+    for (auto track: tracks){
+      if (track.svDoca>max_svDoca) continue;
+      if (ignoreTrack1 and track.pfCand==ignoreTrack1) continue;
+      if (maxSignificance>0 and (track.svDocaErr<=0 or 
+				 track.svDoca/track.svDocaErr > maxSignificance) ) continue;
+      if (pvIndex >= 0 and int(track.pfCand->vertexRef().key())!=pvIndex) continue;
+      n++;
+    }
+    return n;
+  }
+  unsigned int nTracksByBetterMatch(double max_svDoca = 0.03, 
+				    double maxSignificance = 2,
+				    int pvIndex = -1,
+				    const pat::PackedCandidate* ignoreTrack1 = 0)
+  {
+    unsigned int n = 0;
+    for (auto track: tracks){
+      if (track.svDoca>max_svDoca) continue;
+      if (ignoreTrack1 and track.pfCand==ignoreTrack1) continue;
+      if (maxSignificance>0 and (track.svDocaErr<=0 or 
+				 track.svDoca/track.svDocaErr > maxSignificance) ) continue;
+      if (track.svDocaErr<=0 or (track.pvDocaErr>0 and track.svDoca/track.svDocaErr > track.pvDoca/track.pvDocaErr) ) continue;
+      if (pvIndex >= 0 and int(track.pfCand->vertexRef().key())!=pvIndex) continue;
+      n++;
+    }
+    return n;
+  }
+};
 
 using namespace std;
 
@@ -285,13 +351,29 @@ private:
 				const pat::Muon& muon2,
 				const pat::PackedCandidate* kaon = 0 );
   // Two track DOCA
-  float distanceOfClosestApproach( const reco::Track* track1,
-				   const reco::Track* track2 );
-				   
-  
-  DisplacementInformationIn3D compute3dDisplacement(const KinematicFitResult& fit,
-						    const reco::VertexCollection& vertices,
-						    bool closestIn3D = true);
+  float 
+  distanceOfClosestApproach( const reco::Track* track1,
+			     const reco::Track* track2 );
+  // Track to vertex DOCA
+  Measurement1D
+  distanceOfClosestApproach( const reco::Track* track,
+			     RefCountedKinematicVertex vertex);
+  Measurement1D 
+  distanceOfClosestApproach( const reco::Track* track,
+			     const reco::Vertex& vertex);
+
+  DisplacementInformationIn3D 
+  compute3dDisplacement(const KinematicFitResult& fit,
+			const reco::VertexCollection& vertices,
+			bool closestIn3D = true);
+
+  CloseTrackInfo 
+  findTracksCompatibleWithTheVertex(const pat::Muon& muon1,
+				    const pat::Muon& muon2,
+				    const KinematicFitResult& fit,
+				    const reco::BeamSpot& beamSpot,
+				    double maxDoca=0.03 );
+
 
   // ----------member data ---------------------------
     
@@ -303,6 +385,10 @@ private:
 
   edm::ESHandle<TransientTrackBuilder> theTTBuilder_;
   edm::ESHandle<MagneticField> bFieldHandle_;
+  edm::Handle<edm::View<pat::PackedCandidate>> pfCandHandle_;
+  edm::Handle<reco::VertexCollection> pvHandle_;
+
+  const AnalyticalImpactPointExtrapolator* impactPointExtrapolator_;
 
   bool isMC_;
 
@@ -334,6 +420,7 @@ vertexToken_( consumes<reco::VertexCollection> ( iConfig.getParameter<edm::Input
 muonToken_( consumes<std::vector<pat::Muon>> ( iConfig.getParameter<edm::InputTag>( "muonCollection" ) ) ),
 pfCandToken_( consumes<edm::View<pat::PackedCandidate>> ( iConfig.getParameter<edm::InputTag>( "PFCandCollection" ) ) ),
 prunedGenToken_( consumes<edm::View<reco::GenParticle>> ( iConfig.getParameter<edm::InputTag>( "prunedGenParticleCollection" ) ) ),
+impactPointExtrapolator_(0),
 isMC_(            iConfig.getParameter<bool>( "isMC" ) ),
 ptMinMu_(         iConfig.getParameter<double>( "MuonMinPt" ) ),
 etaMaxMu_(        iConfig.getParameter<double>( "MuonMaxEta" ) ),
@@ -396,10 +483,56 @@ void addFitInfo(pat::CompositeCandidate& cand, const KinematicFitResult& fit, st
   cand.addUserFloat( name+"_pv2lipErr",   displacement3d.longitudinalImpactParameter2Err);
 }
 
+CloseTrackInfo 
+BxToMuMuProducer::findTracksCompatibleWithTheVertex(const pat::Muon& muon1,
+						    const pat::Muon& muon2,
+						    const KinematicFitResult& fit, 
+						    const reco::BeamSpot& beamSpot,
+						    double maxDoca)
+{
+  CloseTrackInfo result;
+  for (const auto& pfCand: *pfCandHandle_.product()){
+    if (deltaR(muon1, pfCand) < 0.01 || deltaR(muon2, pfCand) < 0.01) continue;
+    if (pfCand.charge() == 0 ) continue;
+    if (!pfCand.hasTrackDetails()) continue;
+    double mu1_kaon_doca = distanceOfClosestApproach(muon1.innerTrack().get(),
+						     pfCand.bestTrack());
+    double mu2_kaon_doca = distanceOfClosestApproach(muon2.innerTrack().get(),
+						     pfCand.bestTrack());
+    if (mu1_kaon_doca>maxDoca or mu2_kaon_doca>maxDoca) continue;
+    
+    CloseTrack track;
+    track.pfCand = &pfCand;
+    auto doca = distanceOfClosestApproach(pfCand.bestTrack(),fit.refitVertex);
+    track.svDoca = doca.value();
+    track.svDocaErr = doca.error();
+
+    // add PV doca
+    if (pfCand.vertexRef().key()<pvHandle_->size()){
+      doca = distanceOfClosestApproach(pfCand.bestTrack(),pvHandle_->at(pfCand.vertexRef().key()) );
+      track.pvDoca = doca.value();
+      track.pvDocaErr = doca.error();
+    }
+    
+    auto fit_result = vertexWithKinematicFitter(muon1, muon2, pfCand);
+    if (fit_result.valid()){
+      track.svProb = fit_result.vtxProb();
+      track.impactParameterSignificanceBS = pfCand.bestTrack()->dxyError()>0 ? fabs(pfCand.bestTrack()->dxy(beamSpot))/pfCand.bestTrack()->dxyError():0.0;
+    }
+    result.tracks.push_back(track);
+  }
+
+  return result;
+}
+
+
 void BxToMuMuProducer::produce(edm::Event& iEvent, const edm::EventSetup& iSetup) {
 
     iSetup.get<IdealMagneticFieldRecord>().get(bFieldHandle_);
     iSetup.get<TransientTrackRecord>().get("TransientTrackBuilder",theTTBuilder_);
+
+    AnalyticalImpactPointExtrapolator extrapolator(bFieldHandle_.product());
+    impactPointExtrapolator_ = &extrapolator;
 
     edm::Handle<reco::BeamSpot> beamSpotHandle;
     
@@ -411,22 +544,20 @@ void BxToMuMuProducer::produce(edm::Event& iEvent, const edm::EventSetup& iSetup
     
     const reco::BeamSpot& beamSpot(*beamSpotHandle);
     
-    edm::Handle<reco::VertexCollection> pvHandle;
-    iEvent.getByToken(vertexToken_, pvHandle);
+    iEvent.getByToken(vertexToken_, pvHandle_);
     // const reco::Vertex & primaryVertex = vertexHandle->front();
 
     edm::Handle<std::vector<pat::Muon>> muonHandle;
-    edm::Handle<edm::View<pat::PackedCandidate>> pfCandHandle;
     edm::Handle<edm::View<pat::PackedCandidate>> lostTrackHandle;
     
     iEvent.getByToken(muonToken_, muonHandle);
-    iEvent.getByToken(pfCandToken_, pfCandHandle);
+    iEvent.getByToken(pfCandToken_, pfCandHandle_);
     
     edm::Handle<edm::View<reco::GenParticle> > prunedGenParticles;
     if ( isMC_ ) iEvent.getByToken(prunedGenToken_,prunedGenParticles);
     
     auto nMuons = muonHandle->size();
-    auto nPFCands = pfCandHandle->size();
+    auto nPFCands = pfCandHandle_->size();
     // unsigned int lostTrackNumber = useLostTracks_ ? lostTrackHandle->size() : 0;
     
     // Output collection
@@ -477,7 +608,7 @@ void BxToMuMuProducer::produce(edm::Event& iEvent, const edm::EventSetup& iSetup
 	  // 	 kinematicMuMuVertexFit.refitVertex->position().x(),
 	  // 	 kinematicMuMuVertexFit.refitVertex->position().y(),
 	  // 	 kinematicMuMuVertexFit.refitVertex->position().z());
-	  auto displacement3D = compute3dDisplacement(kinematicMuMuVertexFit, *pvHandle.product(),true);
+	  auto displacement3D = compute3dDisplacement(kinematicMuMuVertexFit, *pvHandle_.product(),true);
 	  addFitInfo(dimuonCand, kinematicMuMuVertexFit, "kin", displacement3D);
 	  
 	  if (isMC_){
@@ -505,10 +636,11 @@ void BxToMuMuProducer::produce(edm::Event& iEvent, const edm::EventSetup& iSetup
 	    dimuonCand.addUserFloat("gen_lxy",         (gen_mm.mm_prod_vtx-gen_mm.mm_vtx).rho());
 	  }
 	  
-	  unsigned int nTracksCompatibleWithTheMuMuVertex(0), nDisplacedTracksCompatibleWithTheMuMuVertex(0);
+	  // Look for additional tracks compatible with the dimuon vertex
+	  auto closeTracks = findTracksCompatibleWithTheVertex(muon1,muon2,kinematicMuMuVertexFit,beamSpot);
 	  auto imm = dimuon->size();
 	  for (unsigned int k = 0; k < nPFCands; ++k) {
-	    const pat::PackedCandidate & pfCand = (*pfCandHandle)[k];
+	    const pat::PackedCandidate & pfCand = (*pfCandHandle_)[k];
 	    if (deltaR(muon1, pfCand) < 0.01 || deltaR(muon2, pfCand) < 0.01) continue;
 	    if (pfCand.charge() == 0 ) continue;
 	    if (!pfCand.hasTrackDetails()) continue;
@@ -516,27 +648,37 @@ void BxToMuMuProducer::produce(edm::Event& iEvent, const edm::EventSetup& iSetup
 							     pfCand.bestTrack());
 	    double mu2_kaon_doca = distanceOfClosestApproach(muon2.innerTrack().get(),
 							     pfCand.bestTrack());
-	    if (mu1_kaon_doca<maxTwoTrackDOCA_ and mu2_kaon_doca<maxTwoTrackDOCA_){
-	      auto fit_result = vertexWithKinematicFitter(muon1, muon2, pfCand);
-	      if ( fit_result.vtxProb()>0.1 ) {
-		nTracksCompatibleWithTheMuMuVertex++;
-		double sigDxy = pfCand.bestTrack()->dxyError()>0 ? fabs(pfCand.bestTrack()->dxy(beamSpot))/pfCand.bestTrack()->dxyError():0.0;
-		if (sigDxy>2.0) nDisplacedTracksCompatibleWithTheMuMuVertex++;
-	      }
-	    }		
 
 	    // BtoJpsiK
-	    if (fabs(kinematicMuMuVertexFit.mass()-3.1)>0.2) continue;
-	    if (abs(pfCand.pdgId())!=211) continue; //Charged hadrons
-	    if (pfCand.pt()<ptMinKaon_ || abs(pfCand.eta())>etaMaxKaon_) continue;
+	    bool goodBtoJpsiK = true;
+	    if (fabs(kinematicMuMuVertexFit.mass()-3.1)>0.2) goodBtoJpsiK = false;
+	    if (abs(pfCand.pdgId())!=211) goodBtoJpsiK = false; //Charged hadrons
+	    if (pfCand.pt()<ptMinKaon_ || abs(pfCand.eta())>etaMaxKaon_) goodBtoJpsiK = false;
 	    
-	    if (maxTwoTrackDOCA_>0 and mu1_kaon_doca> maxTwoTrackDOCA_) continue;	      
+	    if (maxTwoTrackDOCA_>0 and mu1_kaon_doca> maxTwoTrackDOCA_) goodBtoJpsiK = false;	      
 	    
-	    if (maxTwoTrackDOCA_>0 and mu2_kaon_doca> maxTwoTrackDOCA_) continue;	      
+	    if (maxTwoTrackDOCA_>0 and mu2_kaon_doca> maxTwoTrackDOCA_) goodBtoJpsiK = false;	      
 
 	    double kmm_mass = (muon1.p4()+muon2.p4()+pfCand.p4()).mass();
-	    if ( kmm_mass<minBKmmMass_ || kmm_mass>maxBKmmMass_ ) continue;
+	    if ( kmm_mass<minBKmmMass_ || kmm_mass>maxBKmmMass_ ) goodBtoJpsiK = false;
 
+	    
+	    if (not goodBtoJpsiK){
+	      // New methods of counting tracks
+	      // if (maxTwoTrackDOCA_>0 and mu1_kaon_doca<maxTwoTrackDOCA_ and mu2_kaon_doca<maxTwoTrackDOCA_){
+	      // 	auto fit_result = vertexWithKinematicFitter(muon1, muon2, pfCand);
+	      // 	if ( fit_result.vtxProb()>0.1 ) {
+	      // 	  nTracksCompatibleWithTheMuMuVertex++;
+	      // 	  double sigDxy = pfCand.bestTrack()->dxyError()>0 ? fabs(pfCand.bestTrack()->dxy(beamSpot))/pfCand.bestTrack()->dxyError():0.0;
+	      // 	  if (sigDxy>2.0) nDisplacedTracksCompatibleWithTheMuMuVertex++;
+	      // 	}
+	      // }	
+	     
+	      continue;
+	    }
+	    
+	    // fill BtoJpsiK candidate info
+	    
 	    pat::CompositeCandidate btokmmCand;
 	    btokmmCand.addUserInt("mm_index", imm);
 	    btokmmCand.addUserFloat("kaon_pt", pfCand.pt());
@@ -580,7 +722,7 @@ void BxToMuMuProducer::produce(edm::Event& iEvent, const edm::EventSetup& iSetup
 	    
 	    auto bToKJPsiMuMu_MC = fitBToKJPsiMuMuNew(kinematicMuMuVertexFit.refitTree, pfCand, true);
 	    bToKJPsiMuMu_MC.postprocess(beamSpot);
-	    auto bToKJPsiMuMu_MC_displacement = compute3dDisplacement(bToKJPsiMuMu_MC, *pvHandle.product(),true);
+	    auto bToKJPsiMuMu_MC_displacement = compute3dDisplacement(bToKJPsiMuMu_MC, *pvHandle_.product(),true);
 	    addFitInfo(btokmmCand, bToKJPsiMuMu_MC, "jpsimc", bToKJPsiMuMu_MC_displacement);
 	      
 	    // broken pointing constraint
@@ -590,8 +732,21 @@ void BxToMuMuProducer::produce(edm::Event& iEvent, const edm::EventSetup& iSetup
 
 	    btokmm->push_back(btokmmCand);
 	  }                    
-	  dimuonCand.addUserInt( "nTrks",     nTracksCompatibleWithTheMuMuVertex);
-	  dimuonCand.addUserInt( "nDisTrks",  nDisplacedTracksCompatibleWithTheMuMuVertex);
+	  int pvIndex = -1;
+	  if (displacement3D.pv)
+	    for (unsigned int i=0; i<pvHandle_->size(); ++i){
+	      if (&pvHandle_->at(i)==displacement3D.pv){
+		pvIndex = i;
+		break;
+	      }
+	    }
+	  dimuonCand.addUserInt( "nTrks",       closeTracks.nTracksByVertexProbability(0.1,-1.0,pvIndex) );
+	  dimuonCand.addUserInt( "nBMTrks",     closeTracks.nTracksByBetterMatch() );
+	  dimuonCand.addUserInt( "nDisTrks",    closeTracks.nTracksByVertexProbability(0.1, 2.0,pvIndex) );
+	  dimuonCand.addUserInt( "closetrk",    closeTracks.nTracksByDisplacementSignificance(0.03, -1, pvIndex) );
+	  dimuonCand.addUserInt( "closetrks1",  closeTracks.nTracksByDisplacementSignificance(0.03, 1, pvIndex) );
+	  dimuonCand.addUserInt( "closetrks2",  closeTracks.nTracksByDisplacementSignificance(0.03, 2, pvIndex) );
+	  dimuonCand.addUserInt( "closetrks3",  closeTracks.nTracksByDisplacementSignificance(0.03, 3, pvIndex) );
         
 	  dimuon->push_back(dimuonCand);
 	}
@@ -979,6 +1134,32 @@ float BxToMuMuProducer::distanceOfClosestApproach( const reco::Track* track1,
   const reco::TransientTrack tt2 = theTTBuilder_->build(track2);
   if ( not md.calculate( tt1.initialFreeState(), tt2.initialFreeState() ) ) return -1.0;
   return md.distance();
+}
+
+Measurement1D 
+BxToMuMuProducer::distanceOfClosestApproach( const reco::Track* track,
+					     RefCountedKinematicVertex vertex)
+{
+  VertexDistance3D distance3D;
+  const reco::TransientTrack tt = theTTBuilder_->build(track);
+  assert(impactPointExtrapolator_);
+  auto tsos = impactPointExtrapolator_->extrapolate(tt.initialFreeState(), vertex->position());
+  if ( not tsos.isValid()) return Measurement1D(-1.0,-1.0);
+  Measurement1D doca = distance3D.distance(VertexState(tsos.globalPosition(), tsos.cartesianError().position()), vertex->vertexState());
+  return doca;
+}
+
+Measurement1D 
+BxToMuMuProducer::distanceOfClosestApproach( const reco::Track* track,
+					     const reco::Vertex& vertex)
+{
+  VertexDistance3D distance3D;
+  const reco::TransientTrack tt = theTTBuilder_->build(track);
+  assert(impactPointExtrapolator_);
+  auto tsos = impactPointExtrapolator_->extrapolate(tt.initialFreeState(), GlobalPoint(Basic3DVector<float>(vertex.position())));
+  if ( not tsos.isValid()) return Measurement1D(-1.0,-1.0);
+  Measurement1D doca = distance3D.distance(VertexState(tsos.globalPosition(), tsos.cartesianError().position()), vertex);
+  return doca;
 }
 
 DisplacementInformationIn3D BxToMuMuProducer::compute3dDisplacement(const KinematicFitResult& fit,
