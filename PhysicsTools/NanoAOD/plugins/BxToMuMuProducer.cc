@@ -189,12 +189,15 @@ struct DisplacementInformationIn3D{
     longitudinalImpactParameter2, longitudinalImpactParameter2Err,
     cosAlpha;
   const reco::Vertex *pv,*pv2;
+  int pvIndex,pv2Index;
   DisplacementInformationIn3D():decayLength(-1.0),decayLengthErr(0.),decayLength2(-1.0),decayLength2Err(0.),
 				distaceOfClosestApproach(-1.0),distaceOfClosestApproachErr(0.0),
 				distaceOfClosestApproach2(-1.0),distaceOfClosestApproach2Err(0.0),
 				longitudinalImpactParameter2(0.0), longitudinalImpactParameter2Err(0.), 
 				cosAlpha(-999.),
-				pv(0),pv2(0){};
+				pv(0),pv2(0),
+				pvIndex(-1),pv2Index(-1)
+  {};
 };
 
 LorentzVector makeLorentzVectorFromPxPyPzM(double px, double py, double pz, double m){
@@ -384,7 +387,7 @@ private:
   computeTrkMuonIsolation(const pat::Muon& muon, 
 			  const pat::Muon& the_other_muon,
 			  unsigned int primaryVertexIndex,
-			  float minPt=0.9, float dR=0.7);
+			  float minPt=0.5, float dR=0.5);
 
 
   // ----------member data ---------------------------
@@ -763,14 +766,7 @@ void BxToMuMuProducer::produce(edm::Event& iEvent, const edm::EventSetup& iSetup
 
 	    btokmm->push_back(btokmmCand);
 	  }                    
-	  int pvIndex = -1;
-	  if (displacement3D.pv)
-	    for (unsigned int i=0; i<pvHandle_->size(); ++i){
-	      if (&pvHandle_->at(i)==displacement3D.pv){
-		pvIndex = i;
-		break;
-	      }
-	    }
+	  int pvIndex = displacement3D.pvIndex;
 	  dimuonCand.addUserInt( "nTrks",       closeTracks.nTracksByVertexProbability(0.1,-1.0,pvIndex) );
 	  dimuonCand.addUserInt( "nBMTrks",     closeTracks.nTracksByBetterMatch() );
 	  dimuonCand.addUserInt( "nDisTrks",    closeTracks.nTracksByVertexProbability(0.1, 2.0,pvIndex) );
@@ -779,6 +775,8 @@ void BxToMuMuProducer::produce(edm::Event& iEvent, const edm::EventSetup& iSetup
 	  dimuonCand.addUserInt( "closetrks2",  closeTracks.nTracksByDisplacementSignificance(0.03, 2, pvIndex) );
 	  dimuonCand.addUserInt( "closetrks3",  closeTracks.nTracksByDisplacementSignificance(0.03, 3, pvIndex) );
 	  dimuonCand.addUserFloat( "docatrk",   closeTracks.minDoca(0.03, pvIndex) );
+	  dimuonCand.addUserFloat( "m1iso",     computeTrkMuonIsolation(muon1,muon2,pvIndex,0.5,0.5));
+	  dimuonCand.addUserFloat( "m2iso",     computeTrkMuonIsolation(muon2,muon1,pvIndex,0.5,0.5));
         
 	  dimuon->push_back(dimuonCand);
 	}
@@ -1211,14 +1209,17 @@ DisplacementInformationIn3D BxToMuMuProducer::compute3dDisplacement(const Kinema
   auto candTransientTrack = fit.refitMother->refittedTransientTrack();
 
   const reco::Vertex* bestVertex(0);
+  int bestVertexIndex(-1);
   double minDistance(999.);
 
-  for ( const auto & vertex: vertices ){
+  for ( unsigned int i = 0; i<vertices.size(); ++i ){
+    const auto & vertex = vertices.at(i);
     if (closestIn3D){
       auto impactParameter3D = IPTools::absoluteImpactParameter3D(candTransientTrack, vertex);
       if (impactParameter3D.first and impactParameter3D.second.value() < minDistance){
 	minDistance = impactParameter3D.second.value();
 	bestVertex = &vertex;
+	bestVertexIndex = i;
       }
     } else{
       auto impactParameterZ  = IPTools::signedDecayLength3D(candTransientTrack, GlobalVector(0,0,1), vertex);
@@ -1226,19 +1227,23 @@ DisplacementInformationIn3D BxToMuMuProducer::compute3dDisplacement(const Kinema
       if (impactParameterZ.first and distance < minDistance){
 	minDistance = distance;
 	bestVertex = &vertex;
+	bestVertexIndex = i;
       }
     }
   }
 
   // find second best vertex
   const reco::Vertex* bestVertex2(0);
+  int bestVertexIndex2(-1);
   double minDistance2(999.);
-  for ( const auto & vertex: vertices ){
+  for ( unsigned int i = 0; i<vertices.size(); ++i ){
+    const auto & vertex = vertices.at(i);
     if (closestIn3D){
       auto impactParameter3D = IPTools::absoluteImpactParameter3D(candTransientTrack, vertex);
       if (impactParameter3D.first and impactParameter3D.second.value() < minDistance2 and impactParameter3D.second.value() > minDistance){
 	minDistance2 = impactParameter3D.second.value();
 	bestVertex2 = &vertex;
+	bestVertexIndex2 = i;
       }
     } else{
       auto impactParameterZ  = IPTools::signedDecayLength3D(candTransientTrack, GlobalVector(0,0,1), vertex);
@@ -1246,6 +1251,7 @@ DisplacementInformationIn3D BxToMuMuProducer::compute3dDisplacement(const Kinema
       if (impactParameterZ.first and distance < minDistance2 and distance > minDistance){
 	minDistance2 = distance;
 	bestVertex2 = &vertex;
+	bestVertexIndex2 = i;
       }
     }
   }
@@ -1255,6 +1261,7 @@ DisplacementInformationIn3D BxToMuMuProducer::compute3dDisplacement(const Kinema
   auto impactParameter3D = IPTools::absoluteImpactParameter3D(candTransientTrack, *bestVertex);
   auto impactParameterZ  = IPTools::signedDecayLength3D(candTransientTrack, GlobalVector(0,0,1), *bestVertex);
   result.pv = bestVertex;
+  result.pvIndex = bestVertexIndex;
   if (impactParameterZ.first) {
     result.longitudinalImpactParameter    = impactParameterZ.second.value();
     result.longitudinalImpactParameterErr = impactParameterZ.second.error();
@@ -1274,6 +1281,7 @@ DisplacementInformationIn3D BxToMuMuProducer::compute3dDisplacement(const Kinema
     auto impactParameter3D2 = IPTools::absoluteImpactParameter3D(candTransientTrack, *bestVertex2);
     auto impactParameterZ2  = IPTools::signedDecayLength3D(candTransientTrack, GlobalVector(0,0,1), *bestVertex2);
     result.pv2 = bestVertex2;
+    result.pv2Index = bestVertexIndex2;
     if (impactParameterZ2.first) {
       result.longitudinalImpactParameter2    = impactParameterZ2.second.value();
       result.longitudinalImpactParameter2Err = impactParameterZ2.second.error();

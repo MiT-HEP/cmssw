@@ -102,6 +102,8 @@ BxToMuMuDiMuonTableVariables = merge_psets(
         closetrks2   = Var("userInt('closetrks2')",        int,   doc = "Number of tracks compatible with the vertex with doca signifance less than 1"),
         closetrks3   = Var("userInt('closetrks3')",        int,   doc = "Number of tracks compatible with the vertex with doca signifance less than 1"),
         docatrk      = Var("userFloat('docatrk')",         float, doc = "Distance of closest approach of a track to the vertex"),
+        m1iso        = Var("userFloat('m1iso')",           float, doc = "Muon isolation the way it's done in Bmm4"),
+        m2iso        = Var("userFloat('m2iso')",           float, doc = "Muon isolation the way it's done in Bmm4"),
         # Kalman Fit
         kal_valid    = Var("userInt('kalman_valid')",      int,   doc = "Kalman vertex fit validity"),
         kal_vtx_prob = Var("userFloat('kalman_vtx_prob')", float, doc = "Kalman fit vertex probability"),
