@@ -284,6 +284,19 @@ struct CloseTrackInfo{
     }
     return n;
   }
+  float minDoca(double max_svDoca = 0.03, 
+		int pvIndex = -1,
+		const pat::PackedCandidate* ignoreTrack1 = 0)
+  {
+    float doca = 99.;
+    for (auto track: tracks){
+      if (track.svDoca>max_svDoca) continue;
+      if (ignoreTrack1 and track.pfCand==ignoreTrack1) continue;
+      if (pvIndex >= 0 and int(track.pfCand->vertexRef().key())!=pvIndex) continue;
+      if (doca>track.svDoca) doca = track.svDoca;
+    }
+    return doca;
+  }
 };
 
 using namespace std;
@@ -747,6 +760,7 @@ void BxToMuMuProducer::produce(edm::Event& iEvent, const edm::EventSetup& iSetup
 	  dimuonCand.addUserInt( "closetrks1",  closeTracks.nTracksByDisplacementSignificance(0.03, 1, pvIndex) );
 	  dimuonCand.addUserInt( "closetrks2",  closeTracks.nTracksByDisplacementSignificance(0.03, 2, pvIndex) );
 	  dimuonCand.addUserInt( "closetrks3",  closeTracks.nTracksByDisplacementSignificance(0.03, 3, pvIndex) );
+	  dimuonCand.addUserFloat( "docatrk",   closeTracks.minDoca(0.03, pvIndex) );
         
 	  dimuon->push_back(dimuonCand);
 	}
