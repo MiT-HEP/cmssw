@@ -49,14 +49,8 @@
 // TODO
 // - add pointing constraint
 // - m1 and m2 isolation
-// - Chi2/ndof
-// - bkmm/mm pt
-// - bkmm/mm eta
-// - decay time
-// - decay length significance (doesn't look right)
-// - delta3D ?
-// - delta3D sig ?
-// - N close tracks doesn't look right
+// - bkmm pt
+// - bkmm eta
 // - othervtx
 // - Delta_Chi2 ?
 
@@ -386,6 +380,11 @@ private:
 				    const KinematicFitResult& fit,
 				    const reco::BeamSpot& beamSpot,
 				    double maxDoca=0.03 );
+  float
+  computeTrkMuonIsolation(const pat::Muon& muon, 
+			  const pat::Muon& the_other_muon,
+			  unsigned int primaryVertexIndex,
+			  float minPt=0.9, float dR=0.7);
 
 
   // ----------member data ---------------------------
@@ -536,6 +535,25 @@ BxToMuMuProducer::findTracksCompatibleWithTheVertex(const pat::Muon& muon1,
   }
 
   return result;
+}
+
+float
+BxToMuMuProducer::computeTrkMuonIsolation(const pat::Muon& the_muon, const pat::Muon& the_other_muon, 
+					  unsigned int primaryVertexIndex,
+					  float minPt, float dR)
+{
+  float sumPt(0);
+  for (const auto& pfCand: *pfCandHandle_.product()){
+    if (deltaR(the_muon, pfCand) < 0.01 || deltaR(the_other_muon, pfCand) < 0.01) continue;
+    if (pfCand.charge() == 0 ) continue;
+    if (!pfCand.hasTrackDetails()) continue;
+    if (pfCand.pt()<minPt) continue;
+    if (pfCand.vertexRef().key()!=primaryVertexIndex) continue;
+    if (deltaR(the_muon, pfCand) > dR) continue;
+    sumPt += pfCand.pt();
+  }
+
+  return the_muon.pt()/(the_muon.pt()+sumPt);
 }
 
 
