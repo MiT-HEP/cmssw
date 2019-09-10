@@ -522,6 +522,7 @@ BxToMuMuProducer::findTracksCompatibleWithTheVertex(const pat::Muon& muon1,
 						    double maxDoca)
 {
   CloseTrackInfo result;
+  if (not fit.valid()) return result;
   for (const auto& pfCand: *pfCandHandle_.product()){
     if (deltaR(muon1, pfCand) < 0.01 || deltaR(muon2, pfCand) < 0.01) continue;
     if (pfCand.charge() == 0 ) continue;
@@ -1284,6 +1285,7 @@ Measurement1D
 BxToMuMuProducer::distanceOfClosestApproach( const reco::Track* track,
 					     RefCountedKinematicVertex vertex)
 {
+  if (not vertex->vertexIsValid()) return Measurement1D(-1.0,-1.0);
   VertexDistance3D distance3D;
   const reco::TransientTrack tt = theTTBuilder_->build(track);
   assert(impactPointExtrapolator_);
