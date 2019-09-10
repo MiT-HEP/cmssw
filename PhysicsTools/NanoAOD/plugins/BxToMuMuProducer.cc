@@ -387,7 +387,16 @@ private:
   computeTrkMuonIsolation(const pat::Muon& muon, 
 			  const pat::Muon& the_other_muon,
 			  unsigned int primaryVertexIndex,
-			  float minPt=0.5, float dR=0.5);
+			  float minPt=0.5, float dR=0.5,
+			  std::vector<const pat::PackedCandidate*> ignoreTracks = 
+			  std::vector<const pat::PackedCandidate*>());
+  float
+  computeTrkMuMuIsolation(const pat::Muon& muon1, 
+			  const pat::Muon& muon2,
+			  unsigned int primaryVertexIndex,
+			  float minPt=0.9, float dR=0.7,
+			  std::vector<const pat::PackedCandidate*> ignoreTracks = 
+			  std::vector<const pat::PackedCandidate*>());
 
 
   // ----------member data ---------------------------
@@ -543,10 +552,19 @@ BxToMuMuProducer::findTracksCompatibleWithTheVertex(const pat::Muon& muon1,
 float
 BxToMuMuProducer::computeTrkMuonIsolation(const pat::Muon& the_muon, const pat::Muon& the_other_muon, 
 					  unsigned int primaryVertexIndex,
-					  float minPt, float dR)
+					  float minPt, float dR,
+					  std::vector<const pat::PackedCandidate*> ignoreTracks)
 {
   float sumPt(0);
   for (const auto& pfCand: *pfCandHandle_.product()){
+    bool ignore_track = false;
+    for (auto trk: ignoreTracks){
+      if (trk==&pfCand){
+	ignore_track = true;
+	break;
+      }
+    }
+    if (ignore_track) continue;
     if (deltaR(the_muon, pfCand) < 0.01 || deltaR(the_other_muon, pfCand) < 0.01) continue;
     if (pfCand.charge() == 0 ) continue;
     if (!pfCand.hasTrackDetails()) continue;
@@ -557,6 +575,35 @@ BxToMuMuProducer::computeTrkMuonIsolation(const pat::Muon& the_muon, const pat::
   }
 
   return the_muon.pt()/(the_muon.pt()+sumPt);
+}
+
+float
+BxToMuMuProducer::computeTrkMuMuIsolation(const pat::Muon& muon1, const pat::Muon& muon2, 
+					  unsigned int primaryVertexIndex,
+					  float minPt, float dR,
+					  std::vector<const pat::PackedCandidate*> ignoreTracks)
+{
+  float sumPt(0);
+  auto b_p4 = muon1.p4()+muon2.p4();
+  for (const auto& pfCand: *pfCandHandle_.product()){
+    bool ignore_track = false;
+    for (auto trk: ignoreTracks){
+      if (trk==&pfCand){
+	ignore_track = true;
+	break;
+      }
+    }
+    if (ignore_track) continue;
+    if (deltaR(muon1, pfCand) < 0.01 || deltaR(muon2, pfCand) < 0.01) continue;
+    if (pfCand.charge() == 0 ) continue;
+    if (!pfCand.hasTrackDetails()) continue;
+    if (pfCand.pt()<minPt) continue;
+    if (pfCand.vertexRef().key()!=primaryVertexIndex) continue;
+    if (deltaR(b_p4, pfCand) > dR) continue;
+    sumPt += pfCand.pt();
+  }
+
+  return b_p4.pt()/(b_p4.pt()+sumPt);
 }
 
 
@@ -777,6 +824,7 @@ void BxToMuMuProducer::produce(edm::Event& iEvent, const edm::EventSetup& iSetup
 	  dimuonCand.addUserFloat( "docatrk",   closeTracks.minDoca(0.03, pvIndex) );
 	  dimuonCand.addUserFloat( "m1iso",     computeTrkMuonIsolation(muon1,muon2,pvIndex,0.5,0.5));
 	  dimuonCand.addUserFloat( "m2iso",     computeTrkMuonIsolation(muon2,muon1,pvIndex,0.5,0.5));
+	  dimuonCand.addUserFloat( "iso",       computeTrkMuMuIsolation(muon2,muon1,pvIndex,0.9,0.7));
         
 	  dimuon->push_back(dimuonCand);
 	}
