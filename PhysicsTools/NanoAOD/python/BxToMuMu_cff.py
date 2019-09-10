@@ -105,6 +105,9 @@ BxToMuMuDiMuonTableVariables = merge_psets(
         m1iso        = Var("userFloat('m1iso')",           float, doc = "Muon isolation the way it's done in Bmm4"),
         m2iso        = Var("userFloat('m2iso')",           float, doc = "Muon isolation the way it's done in Bmm4"),
         iso          = Var("userFloat('iso')",             float, doc = "B isolation the way it's done in Bmm4"),
+        otherVtxMaxProb = Var("userFloat('otherVtxMaxProb')", float, doc = "Max vertexing probability of one of the muons with a random track with minPt=0.5GeV"),
+        otherVtxMaxProb1 = Var("userFloat('otherVtxMaxProb1')", float, doc = "Max vertexing probability of one of the muons with a random track with minPt=1.0GeV"),
+        otherVtxMaxProb2 = Var("userFloat('otherVtxMaxProb2')", float, doc = "Max vertexing probability of one of the muons with a random track with minPt=2.0GeV"),
         # Kalman Fit
         kal_valid    = Var("userInt('kalman_valid')",      int,   doc = "Kalman vertex fit validity"),
         kal_vtx_prob = Var("userFloat('kalman_vtx_prob')", float, doc = "Kalman fit vertex probability"),

@@ -398,6 +398,13 @@ private:
 			  std::vector<const pat::PackedCandidate*> ignoreTracks = 
 			  std::vector<const pat::PackedCandidate*>());
 
+  float
+  otherVertexMaxProb(const pat::Muon& muon1, 
+		     const pat::Muon& muon2,
+		     float min_pt = 0.5,
+		     float max_doca = 0.1,
+		     std::vector<const pat::PackedCandidate*> ignoreTracks = 
+		     std::vector<const pat::PackedCandidate*>());
 
   // ----------member data ---------------------------
     
@@ -604,6 +611,63 @@ BxToMuMuProducer::computeTrkMuMuIsolation(const pat::Muon& muon1, const pat::Muo
   }
 
   return b_p4.pt()/(b_p4.pt()+sumPt);
+}
+
+
+float
+BxToMuMuProducer::otherVertexMaxProb(const pat::Muon& muon1, 
+				     const pat::Muon& muon2,
+				     float minPt,
+				     float max_doca,
+				     std::vector<const pat::PackedCandidate*> ignoreTracks){
+  float bestMu1Vtx = 0;
+  float bestMu2Vtx = 0;
+  KalmanVertexFitter kvf;
+  std::vector<reco::TransientTrack> transTrksForMu1Vertex;
+  transTrksForMu1Vertex.push_back((*theTTBuilder_).build(muon1.innerTrack().get()));
+  std::vector<reco::TransientTrack> transTrksForMu2Vertex;
+  transTrksForMu2Vertex.push_back((*theTTBuilder_).build(muon2.innerTrack().get()));
+
+
+  for (const auto& pfCand: *pfCandHandle_.product()){
+    bool ignore_track = false;
+    for (auto trk: ignoreTracks){
+      if (trk==&pfCand){
+	ignore_track = true;
+	break;
+      }
+    }
+    if (ignore_track) continue;
+    if (deltaR(muon1, pfCand) < 0.01 || deltaR(muon2, pfCand) < 0.01) continue;
+    if (pfCand.charge() == 0 ) continue;
+    if (!pfCand.hasTrackDetails()) continue;
+    if (pfCand.pt()<minPt) continue;
+    double mu1_doca = distanceOfClosestApproach(muon1.innerTrack().get(),
+						pfCand.bestTrack());
+    double mu2_doca = distanceOfClosestApproach(muon2.innerTrack().get(),
+						pfCand.bestTrack());
+    if (mu1_doca < max_doca and mu1_doca < mu2_doca){
+      // first  muon is closer - check vertex probability
+      transTrksForMu1Vertex.push_back((*theTTBuilder_).build(pfCand.bestTrack()));
+      TransientVertex tv = kvf.vertex(transTrksForMu1Vertex);
+      if ( tv.isValid() ){
+	float vtxProb = TMath::Prob(tv.totalChiSquared(), (int)tv.degreesOfFreedom());
+	if (vtxProb > bestMu1Vtx) bestMu1Vtx = vtxProb;
+      }
+      transTrksForMu1Vertex.pop_back();
+    }
+    if (mu2_doca < max_doca and mu2_doca < mu1_doca){
+      // second  muon is closer - check vertex probability
+      transTrksForMu2Vertex.push_back((*theTTBuilder_).build(pfCand.bestTrack()));
+      TransientVertex tv = kvf.vertex(transTrksForMu2Vertex);
+      if ( tv.isValid() ){
+	float vtxProb = TMath::Prob(tv.totalChiSquared(), (int)tv.degreesOfFreedom());
+	if (vtxProb > bestMu2Vtx) bestMu2Vtx = vtxProb;
+      }
+      transTrksForMu2Vertex.pop_back();
+    }
+  }
+  return max(bestMu1Vtx,bestMu2Vtx);
 }
 
 
@@ -825,7 +889,9 @@ void BxToMuMuProducer::produce(edm::Event& iEvent, const edm::EventSetup& iSetup
 	  dimuonCand.addUserFloat( "m1iso",     computeTrkMuonIsolation(muon1,muon2,pvIndex,0.5,0.5));
 	  dimuonCand.addUserFloat( "m2iso",     computeTrkMuonIsolation(muon2,muon1,pvIndex,0.5,0.5));
 	  dimuonCand.addUserFloat( "iso",       computeTrkMuMuIsolation(muon2,muon1,pvIndex,0.9,0.7));
-        
+	  dimuonCand.addUserFloat( "otherVtxMaxProb", otherVertexMaxProb(muon1,muon2,0.5));
+	  dimuonCand.addUserFloat( "otherVtxMaxProb1", otherVertexMaxProb(muon1,muon2,1.0));
+	  dimuonCand.addUserFloat( "otherVtxMaxProb2", otherVertexMaxProb(muon1,muon2,2.0));
 	  dimuon->push_back(dimuonCand);
 	}
       }
