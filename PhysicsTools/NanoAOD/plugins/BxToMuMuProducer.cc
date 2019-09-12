@@ -30,6 +30,7 @@
 #include "TrackingTools/PatternTools/interface/TwoTrackMinimumDistance.h"
 #include "TrackingTools/IPTools/interface/IPTools.h"
 #include "TrackingTools/GeomPropagators/interface/AnalyticalImpactPointExtrapolator.h"
+#include "TMVA/Reader.h"
 
 #include "CommonTools/CandUtils/interface/AddFourMomenta.h"
 
@@ -296,8 +297,12 @@ struct CloseTrackInfo{
   }
 };
 
-using namespace std;
+struct BdtReaderData {
+  float fls3d, alpha, pvips, iso, chi2dof, docatrk, closetrk, m1iso, m2iso, eta, m;
+};
 
+
+using namespace std;
 
 ///////////////////////////////////////////////////////////////////////////
 ///                             P L U G I N
@@ -406,6 +411,10 @@ private:
 		     std::vector<const pat::PackedCandidate*> ignoreTracks = 
 		     std::vector<const pat::PackedCandidate*>());
 
+  float  computeAnalysisBDT(unsigned int event_idx);
+  
+  void setupTmvaReader(TMVA::Reader& reader, std::string file);
+
   // ----------member data ---------------------------
     
   edm::EDGetTokenT<reco::BeamSpot> beamSpotToken_;
@@ -433,6 +442,10 @@ private:
   double minBKmmMass_;
   double maxBKmmMass_;
   double maxTwoTrackDOCA_;
+  BdtReaderData bdtData_;
+  TMVA::Reader  bdtReader0_;
+  TMVA::Reader  bdtReader1_;
+  TMVA::Reader  bdtReader2_;
     
   float MuonMass_    = 0.10565837;
   float MuonMassErr_ = 3.5*1e-9;
@@ -461,10 +474,16 @@ DCASigMinKaon_(   iConfig.getParameter<double>( "KaonMinDCASig" ) ),
 diMuonCharge_(    iConfig.getParameter<bool>(   "DiMuonChargeCheck" ) ),
 minBKmmMass_(     iConfig.getParameter<double>( "minBKmmMass" ) ),
 maxBKmmMass_(     iConfig.getParameter<double>( "maxBKmmMass" ) ),
-maxTwoTrackDOCA_( iConfig.getParameter<double>( "maxTwoTrackDOCA" ) )
+maxTwoTrackDOCA_( iConfig.getParameter<double>( "maxTwoTrackDOCA" ) ),
+bdtReader0_("!Color:Silent"),
+bdtReader1_("!Color:Silent"),
+bdtReader2_("!Color:Silent")
 {
     produces<pat::CompositeCandidateCollection>("DiMuon");
     produces<pat::CompositeCandidateCollection>("BToKmumu");
+    setupTmvaReader(bdtReader0_,(iConfig.getParameter<edm::FileInPath>("bdtEvent0")).fullPath());
+    setupTmvaReader(bdtReader1_,(iConfig.getParameter<edm::FileInPath>("bdtEvent1")).fullPath());
+    setupTmvaReader(bdtReader2_,(iConfig.getParameter<edm::FileInPath>("bdtEvent2")).fullPath());
 }
 
 bool BxToMuMuProducer::isGoodMuon(const pat::Muon& muon){
@@ -893,6 +912,21 @@ void BxToMuMuProducer::produce(edm::Event& iEvent, const edm::EventSetup& iSetup
 	  dimuonCand.addUserFloat( "otherVtxMaxProb", otherVertexMaxProb(muon1,muon2,0.5));
 	  dimuonCand.addUserFloat( "otherVtxMaxProb1", otherVertexMaxProb(muon1,muon2,1.0));
 	  dimuonCand.addUserFloat( "otherVtxMaxProb2", otherVertexMaxProb(muon1,muon2,2.0));
+
+	  // BDT
+	  bdtData_.fls3d    = dimuonCand.userFloat("kin_sl3d");
+	  bdtData_.alpha    = dimuonCand.userFloat("kin_alpha");
+	  bdtData_.pvips    = dimuonCand.userFloat("kin_pvip")/dimuonCand.userFloat("kin_pvipErr");
+	  bdtData_.iso      = dimuonCand.userFloat("iso");
+	  bdtData_.chi2dof  = dimuonCand.userFloat("kin_vtx_chi2dof");
+	  bdtData_.docatrk  = dimuonCand.userFloat("docatrk");
+	  bdtData_.closetrk = dimuonCand.userInt("closetrk");
+	  bdtData_.m1iso    = dimuonCand.userFloat("m1iso");
+	  bdtData_.m2iso    = dimuonCand.userFloat("m2iso");
+	  bdtData_.eta      = dimuonCand.userFloat("kin_eta");	  
+	  bdtData_.m        = dimuonCand.userFloat("kin_mass");	  
+
+	  dimuonCand.addUserFloat("bdt",computeAnalysisBDT(iEvent.eventAuxiliary().event()%3));
 	  dimuon->push_back(dimuonCand);
 	}
       }
@@ -1474,6 +1508,39 @@ DisplacementInformationIn3D BxToMuMuProducer::compute3dDisplacement(const Kinema
 
 //   return summary;
 // }
+
+void BxToMuMuProducer::setupTmvaReader(TMVA::Reader& reader, std::string file){
+  reader.AddVariable("fls3d",    & bdtData_.fls3d);
+  reader.AddVariable("alpha",    & bdtData_.alpha);
+  reader.AddVariable("pvips",    & bdtData_.pvips);
+  reader.AddVariable("iso",      & bdtData_.iso);
+  reader.AddVariable("chi2dof",  & bdtData_.chi2dof);
+  reader.AddVariable("docatrk",  & bdtData_.docatrk);
+  reader.AddVariable("closetrk", & bdtData_.closetrk);
+  reader.AddVariable("m1iso",    & bdtData_.m1iso);
+  reader.AddVariable("m2iso",    & bdtData_.m2iso);
+  reader.AddVariable("eta",      & bdtData_.eta);
+  reader.AddSpectator("m",       & bdtData_.m);
+  reader.BookMVA("BDTG",file);
+}
+
+float
+BxToMuMuProducer::computeAnalysisBDT(unsigned int event_idx)
+{
+  switch (event_idx){
+  case 0:
+    return bdtReader0_.EvaluateMVA("BDTG");
+    break;
+  case 1:
+    return bdtReader1_.EvaluateMVA("BDTG");
+    break;
+  case 2:
+    return bdtReader2_.EvaluateMVA("BDTG");
+    break;
+  default:
+    throw cms::Exception("FatalError") << "event index must be in [0-3] range\n";
+  }
+}
 
 
 DEFINE_FWK_MODULE(BxToMuMuProducer);
