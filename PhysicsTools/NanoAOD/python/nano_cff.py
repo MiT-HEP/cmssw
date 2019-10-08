@@ -312,13 +312,12 @@ def nanoAOD_customizeMC(process):
     return process
 
 def nanoAOD_customizeBxToMuMu(process):
-    process = nanoAOD_customizeCommon(process)
+    # process = nanoAOD_customizeCommon(process)
     # Data 
     process.nanoSequence   = cms.Sequence( process.nanoSequence + BxToMuMuSequence + BxToMuMuTables)
     # MC
     process.nanoSequenceMC = cms.Sequence( process.nanoSequenceMC + BxToMuMuMcSequence + BxToMuMuMcTables)
     return process
-
 
 ### Era dependent customization
 _80x_sequence = nanoSequenceCommon.copy()
